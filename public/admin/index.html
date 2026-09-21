@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Customer Service Bot – Merchant Console</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/admin.css" />
+  </head>
+  <body>
+    <!-- Login / signup view -->
+    <div id="auth-view" class="wrap">
+      <div class="card auth">
+        <h1>Customer Service Bot</h1>
+        <p class="muted">Sign in to manage your store's AI assistant.</p>
+        <div class="tabs">
+          <button data-tab="login" class="tab active">Log in</button>
+          <button data-tab="signup" class="tab">Sign up</button>
+        </div>
+        <form id="auth-form">
+          <label>Email <input type="email" name="email" required autocomplete="email" /></label>
+          <label>Password
+            <input type="password" name="password" required minlength="6" autocomplete="current-password" />
+          </label>
+          <button type="submit" class="primary">Continue</button>
+          <p id="auth-error" class="error" hidden></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- Main console -->
+    <div id="console-view" hidden>
+      <header class="topbar">
+        <strong>Customer Service Bot</strong>
+        <span class="muted" id="who"></span>
+        <button id="logout-btn" class="link">Log out</button>
+      </header>
+
+      <main class="container">
+        <section class="card">
+          <h2>Store information</h2>
+          <p class="muted">These appear inside the AI's prompt as the source of truth for store policies.</p>
+          <form id="store-form">
+            <label>Brand name
+              <input type="text" name="brand_name" maxlength="120" required />
+            </label>
+            <label>Return / refund policy
+              <textarea name="return_policy" rows="4" placeholder="e.g. 30-day returns, buyer pays return shipping..."></textarea>
+            </label>
+            <label>Shipping / delivery times
+              <textarea name="shipping_info" rows="4" placeholder="e.g. US 5–8 business days, EU 7–12 days..."></textarea>
+            </label>
+            <label>Anything else (optional)
+              <textarea name="extra_info" rows="4" placeholder="Sizes, materials, contact email, hours..."></textarea>
+            </label>
+            <button type="submit" class="primary">Save</button>
+            <span id="store-saved" class="muted" hidden>Saved ✓</span>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>FAQ</h2>
+          <p class="muted">Common questions and their answers. The AI uses these first.</p>
+          <form id="faq-form">
+            <div class="faq-row">
+              <input type="text" name="question" placeholder="Question" required />
+              <textarea name="answer" rows="2" placeholder="Answer" required></textarea>
+              <button type="submit" class="primary">Add</button>
+            </div>
+          </form>
+          <ul id="faq-list" class="faq-list"></ul>
+        </section>
+
+        <section class="card">
+          <h2>Embed snippet</h2>
+          <p class="muted">Paste this into your storefront's HTML (Shopify: <code>theme.liquid</code>; WooCommerce: header / footer PHP template).</p>
+          <pre id="snippet" class="snippet"></pre>
+          <button id="copy-snippet" class="link">Copy</button>
+        </section>
+
+        <section class="card">
+          <h2>Questions handed off to you</h2>
+          <p class="muted">When the AI couldn't answer, it captured the visitor's email and question here.</p>
+          <ul id="escalations" class="escalations"></ul>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/admin.js"></script>
+  </body>
+</html>
