@@ -224,49 +224,62 @@
       .then(function (data) {
         var label = TIER_LABEL[data.tier] || data.tier;
         var pct = data.cap === Infinity ? 0 : Math.min(100, Math.round((data.used / data.cap) * 100));
-        usageSummary.querySelector('.usage-tier').textContent = label;
+        usageSummary.querySelector('.usage-tier').textContent = label + (data.trial_days_left != null ? ' (trial)' : '');
         usageFill.style.width = pct + '%';
         usageFill.classList.toggle('usage-fill-warn', pct >= 80);
-        usageText.textContent = data.used + ' of ' + data.cap + ' conversations used this month (resets ' + (data.reset_at || 'on the 1st') + ')';
-        renderUpgradeTiers(data.tier);
+        var trialNote = data.trial_days_left != null
+          ? ' &middot; <strong>Trial: ' + data.trial_days_left + ' day' + (data.trial_days_left === 1 ? '' : 's') + ' left</strong>'
+          : '';
+        usageText.innerHTML = data.used + ' of ' + data.cap + ' conversations used this month' + trialNote;
+        renderUpgradeTiers(data);
       });
   }
 
-  function renderUpgradeTiers(currentTier) {
+  function renderUpgradeTiers(usage) {
+    var currentTier = usage.tier;
+    var onTrial = usage.trial_days_left != null;
     upgradeTiersEl.innerHTML = '';
-    Promise.all([
-      fetch('/api/admin/lifetime-availability', { credentials: 'include' }).then(function (r) { return r.json(); }).catch(function () { return { slots: [] }; }),
-      Promise.resolve(),
-    ]).then(function (results) {
-      var slots = results[0].slots || [];
-      var byTier = {};
-      slots.forEach(function (s) { byTier[s.tier_key] = s.remaining; });
-      PRICE_INFO.forEach(function (p) {
-        var isCurrent = p.key === currentTier || (p.key === 'pro_monthly' && currentTier === 'pro_monthly');
-        var row = document.createElement('div');
-        row.className = 'upgrade-row' + (isCurrent ? ' current' : '');
-        var remaining = p.key.indexOf('lifetime_') === 0 ? (byTier[p.key] != null ? byTier[p.key] : null) : null;
-        var slotsLabel = remaining == null ? '' :
-          (remaining <= 0
-            ? '<span class="upgrade-slots sold-out">Sold out</span>'
-            : '<span class="upgrade-slots">' + remaining + ' of ' + (p.key === 'lifetime_1' ? 120 : p.key === 'lifetime_2' ? 60 : 20) + ' left</span>');
-        row.innerHTML =
-          '<div class="upgrade-info">' +
-            '<div class="upgrade-label">' + escapeHtml(p.label) + (isCurrent ? ' <span class="current-tag">current</span>' : '') + '</div>' +
-            '<div class="upgrade-price">' + escapeHtml(p.price) + ' &middot; ' + p.convos + ' conversations/mo</div>' +
-            '<div class="upgrade-note muted">' + escapeHtml(p.note) + '</div>' +
-          '</div>' +
-          '<div class="upgrade-action">' + slotsLabel +
-            (isCurrent
-              ? '<button class="link" disabled>Active</button>'
-              : '<button class="primary upgrade-btn" data-key="' + p.key + '">Upgrade</button>') +
-          '</div>';
-        upgradeTiersEl.appendChild(row);
+    fetch('/api/admin/lifetime-availability', { credentials: 'include' })
+      .then(function (r) { return r.json(); })
+      .catch(function () { return { slots: [] }; })
+      .then(function (data) {
+        var slots = data.slots || [];
+        var byTier = {};
+        slots.forEach(function (s) { byTier[s.tier_key] = s.remaining; });
+        PRICE_INFO.forEach(function (p) {
+          var isCurrent = p.key === currentTier;
+          var canTrial = p.key === 'pro_monthly' && !usage.has_used_trial && currentTier === 'free' && !onTrial;
+          var row = document.createElement('div');
+          row.className = 'upgrade-row' + (isCurrent ? ' current' : '');
+          var remaining = p.key.indexOf('lifetime_') === 0 ? (byTier[p.key] != null ? byTier[p.key] : null) : null;
+          var slotsLabel = remaining == null ? '' :
+            (remaining <= 0
+              ? '<span class="upgrade-slots sold-out">Sold out</span>'
+              : '<span class="upgrade-slots">' + remaining + ' of ' + (p.key === 'lifetime_1' ? 120 : p.key === 'lifetime_2' ? 60 : 20) + ' left</span>');
+          var actionHtml;
+          if (isCurrent) {
+            actionHtml = '<button class="link" disabled>' + (onTrial ? 'Trial' : 'Active') + '</button>';
+          } else if (canTrial) {
+            actionHtml = '<button class="primary trial-btn" data-key="' + p.key + '">Try free for 7 days</button>';
+          } else {
+            actionHtml = '<button class="primary upgrade-btn" data-key="' + p.key + '">Upgrade</button>';
+          }
+          row.innerHTML =
+            '<div class="upgrade-info">' +
+              '<div class="upgrade-label">' + escapeHtml(p.label) + (isCurrent ? ' <span class="current-tag">current</span>' : '') + '</div>' +
+              '<div class="upgrade-price">' + escapeHtml(p.price) + ' &middot; ' + p.convos + ' conversations/mo</div>' +
+              '<div class="upgrade-note muted">' + escapeHtml(p.note) + '</div>' +
+            '</div>' +
+            '<div class="upgrade-action">' + slotsLabel + actionHtml + '</div>';
+          upgradeTiersEl.appendChild(row);
+        });
+        upgradeTiersEl.querySelectorAll('.upgrade-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () { doUpgrade(btn.getAttribute('data-key')); });
+        });
+        upgradeTiersEl.querySelectorAll('.trial-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () { doTrial(btn.getAttribute('data-key')); });
+        });
       });
-      upgradeTiersEl.querySelectorAll('.upgrade-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () { doUpgrade(btn.getAttribute('data-key')); });
-      });
-    });
   }
 
   function showUpgradeMsg(text, ok) {
@@ -274,7 +287,7 @@
     upgradeMsg.textContent = text;
     upgradeMsg.classList.toggle('upgrade-msg-ok', !!ok);
     upgradeMsg.classList.toggle('upgrade-msg-err', !ok);
-    if (ok) setTimeout(function () { upgradeMsg.hidden = true; }, 3000);
+    if (ok) setTimeout(function () { upgradeMsg.hidden = true; }, 4000);
   }
 
   function doUpgrade(priceKey) {
@@ -297,6 +310,26 @@
           var extra = r.body.lifetime_remaining != null ? ' (' + r.body.lifetime_remaining + ' Lifetime slots left)' : '';
           showUpgradeMsg('Upgraded to ' + TIER_LABEL[r.body.tier] + extra, true);
         }
+        loadUsage();
+      })
+      .catch(function () { showUpgradeMsg('Network error.', false); });
+  }
+
+  function doTrial(priceKey) {
+    upgradeMsg.hidden = true;
+    fetch('/api/billing/start-trial', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ price_key: priceKey }),
+    })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (r) {
+        if (!r.ok || !r.body.ok) {
+          showUpgradeMsg(r.body && r.body.error ? r.body.error : 'Could not start trial.', false);
+          return;
+        }
+        showUpgradeMsg('Trial started: 7 days of Pro Monthly free. After day 7 you drop back to Free unless you upgrade.', true);
         loadUsage();
       })
       .catch(function () { showUpgradeMsg('Network error.', false); });

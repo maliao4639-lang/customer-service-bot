@@ -72,6 +72,10 @@ safeAlter("ALTER TABLE merchants ADD COLUMN monthly_convo_count INTEGER NOT NULL
 // SQLite ADD COLUMN doesn't allow non-constant DEFAULT like (date('now')),
 // so seed empty string and rely on ensureMonthReset() to populate it.
 safeAlter("ALTER TABLE merchants ADD COLUMN convo_count_reset_at TEXT NOT NULL DEFAULT ''");
+// Trial tracking: NULL = never trialed, ISO date = trial expires then.
+// has_used_trial prevents repeat trials even after the trial ends.
+safeAlter("ALTER TABLE merchants ADD COLUMN trial_ends_at TEXT");
+safeAlter("ALTER TABLE merchants ADD COLUMN has_used_trial INTEGER NOT NULL DEFAULT 0");
 
 // Lifetime slot ledger (mirrors the 200-slot plan in PRICING). One row per
 // tier_key; sold_count is incremented atomically by tryReserveLifetime().
@@ -192,6 +196,55 @@ function getLifetimeAvailability() {
   }));
 }
 
+// ---- Trial helpers --------------------------------------------------------
+// One-shot 7-day Pro trial per merchant. Trial is independent of paid tiers:
+// if a merchant upgrades to a paid tier mid-trial, we clear trial_ends_at so
+// the auto-expiry doesn't knock them down to free at day 7.
+
+const TRIAL_DAYS = 7;
+
+function startProTrial(merchantId) {
+  const row = db.prepare('SELECT tier, has_used_trial FROM merchants WHERE id = ?').get(merchantId);
+  if (!row) return { ok: false, error: 'merchant_not_found' };
+  if (row.has_used_trial) return { ok: false, error: 'already_used_trial' };
+  // Refuse if merchant is already on a paid tier (no free trial for paying users).
+  if (row.tier !== 'free') return { ok: false, error: 'not_eligible', current_tier: row.tier };
+
+  const endsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  db.prepare(
+    `UPDATE merchants
+        SET tier = 'pro_monthly',
+            monthly_convo_count = 0,
+            convo_count_reset_at = date('now'),
+            trial_ends_at = ?,
+            has_used_trial = 1
+      WHERE id = ?`
+  ).run(endsAt, merchantId);
+  return { ok: true, tier: 'pro_monthly', trial_ends_at: endsAt };
+}
+
+// Run once at startup and periodically. Downgrades trial merchants whose
+// trial has expired. Idempotent and cheap.
+function expireTrials() {
+  const res = db.prepare(
+    `UPDATE merchants
+        SET tier = 'free',
+            monthly_convo_count = 0,
+            convo_count_reset_at = date('now'),
+            trial_ends_at = NULL
+      WHERE trial_ends_at IS NOT NULL
+        AND date(trial_ends_at) <= date('now')
+        AND tier = 'pro_monthly'`
+  ).run();
+  return res.changes;
+}
+
+function getTrialStatus(merchantId) {
+  return db
+    .prepare('SELECT trial_ends_at, has_used_trial, tier FROM merchants WHERE id = ?')
+    .get(merchantId);
+}
+
 module.exports = {
   db,
   randomToken,
@@ -202,4 +255,8 @@ module.exports = {
   tierMonthlyCap,
   tryReserveLifetime,
   getLifetimeAvailability,
+  startProTrial,
+  expireTrials,
+  getTrialStatus,
+  TRIAL_DAYS,
 };

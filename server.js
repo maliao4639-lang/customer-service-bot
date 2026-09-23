@@ -16,6 +16,10 @@ const {
   tierMonthlyCap,
   getLifetimeAvailability,
   tryReserveLifetime,
+  startProTrial,
+  expireTrials,
+  getTrialStatus,
+  TRIAL_DAYS,
 } = require('./db');
 const { generateAnswer, loadFaqs } = require('./llm');
 
@@ -443,13 +447,22 @@ app.get('/api/admin/lifetime-availability', requireAuth, (_req, res) => {
 // ---- Admin: usage snapshot (so merchant sees their own remaining quota) ----
 app.get('/api/admin/usage', requireAuth, (req, res) => {
   const m = db
-    .prepare('SELECT tier, monthly_convo_count AS used, convo_count_reset_at AS reset_at FROM merchants WHERE id = ?')
+    .prepare('SELECT tier, monthly_convo_count AS used, convo_count_reset_at AS reset_at, trial_ends_at, has_used_trial FROM merchants WHERE id = ?')
     .get(req.merchant.id);
+  let daysLeft = null;
+  if (m?.trial_ends_at) {
+    const end = new Date(m.trial_ends_at + 'T00:00:00Z').getTime();
+    const now = Date.now();
+    daysLeft = Math.max(0, Math.ceil((end - now) / (24 * 60 * 60 * 1000)));
+  }
   res.json({
     tier: m?.tier || 'free',
     used: m?.used || 0,
     cap: tierMonthlyCap(m?.tier || 'free'),
     reset_at: m?.reset_at || null,
+    trial_ends_at: m?.trial_ends_at || null,
+    trial_days_left: daysLeft,
+    has_used_trial: !!m?.has_used_trial,
   });
 });
 
@@ -678,7 +691,27 @@ if (STRIPE_WEBHOOK_SECRET) {
   });
 }
 
+// ---- Trial (7-day Pro) ----------------------------------------------------
+// One trial per merchant. Refuses if they've already used it, or if they're
+// already on a paid tier (no "double dipping" free trial after upgrading).
+app.post('/api/billing/start-trial', requireAuth, (req, res) => {
+  const result = startProTrial(req.merchant.id);
+  if (!result.ok) return res.status(409).json(result);
+  res.json(result);
+});
+
 if (require.main === module) {
+  // Expire any trials whose 7 days have already passed (e.g. server was off
+  // when they expired). Cheap (single UPDATE).
+  const expired = expireTrials();
+  if (expired > 0) console.log(`[trial] expired ${expired} trial(s) at startup`);
+
+  // Run hourly to catch expirations while the server is up.
+  setInterval(() => {
+    const n = expireTrials();
+    if (n > 0) console.log(`[trial] expired ${n} trial(s)`);
+  }, 60 * 60 * 1000);
+
   app.listen(PORT, () => {
     console.log(`AI customer-service bot listening on ${PUBLIC_BASE_URL}`);
   });
