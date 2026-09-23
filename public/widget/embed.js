@@ -113,6 +113,29 @@
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  // Renders a special card when the store has hit its monthly reply limit
+  // (HTTP 402). Disables input so the visitor doesn't loop into another 402.
+  function addUpgradeCard(used, cap, upgradeUrl) {
+    var el = document.createElement('div');
+    el.className = 'csb-msg csb-msg-bot csb-upgrade-card';
+    el.innerHTML = [
+      '<div class="csb-upgrade-eyebrow">Monthly limit reached</div>',
+      '<div class="csb-upgrade-title">This store is out of instant replies for now</div>',
+      '<div class="csb-upgrade-body">The shop owner can keep the assistant running by upgrading, or you can leave your email below and the team will get back to you within a day.</div>',
+      '<div class="csb-upgrade-cta"><a href="' + (upgradeUrl || (apiBase + '/pricing')) + '" target="_blank" rel="noopener">View pricing &rarr;</a></div>',
+      '<div class="csb-upgrade-foot">' + (used || '?') + ' / ' + (cap || '?') + ' used this month</div>'
+    ].join('');
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    // Lock input so the visitor can't fire another 402 by typing more.
+    input.disabled = true;
+    sendBtn.disabled = true;
+    input.placeholder = 'Monthly limit reached — leave your email below.';
+    // Encourage the email fallback so the lead isn't lost.
+    pendingQuestion = '__upgrade_fallback__';
+    setEmailRowVisible(true);
+  }
+
   function setEmailRowVisible(visible) {
     emailRow.hidden = !visible;
     if (visible) {
@@ -134,9 +157,13 @@
       headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
       body: JSON.stringify({ message: message, session_key: sessionKey, email: visitorEmail || undefined }),
     })
-      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); })
       .then(function (r) {
         if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+        if (r.status === 402) {
+          addUpgradeCard(r.body.used, r.body.cap, r.body.upgrade_url);
+          return;
+        }
         if (!r.ok) {
           addBubble('bot', r.body && r.body.error ? r.body.error : 'Something went wrong. Please try again.');
           return;
@@ -189,9 +216,13 @@
         headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
         body: JSON.stringify({ message: q, session_key: sessionKey, email: email }),
       })
-        .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+        .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, status: r.status, body: b }; }); })
         .then(function (r) {
           if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+          if (r.status === 402) {
+            addUpgradeCard(r.body.used, r.body.cap, r.body.upgrade_url);
+            return;
+          }
           if (!r.ok) { addBubble('bot', 'Something went wrong.'); return; }
           addBubble('bot', r.body.reply || '');
         })

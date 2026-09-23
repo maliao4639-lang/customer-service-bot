@@ -93,6 +93,54 @@
   border-bottom-left-radius: 4px;
 }
 
+/* Upgrade / monthly-limit-reached card */
+.csb-upgrade-card {
+  align-self: stretch;
+  max-width: 100%;
+  background: linear-gradient(180deg, #fff7ed 0%, #fff 100%);
+  border: 1px solid #fed7aa;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border-bottom-left-radius: 4px;
+}
+.csb-upgrade-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #b45309;
+  margin-bottom: 4px;
+}
+.csb-upgrade-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+.csb-upgrade-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #334155;
+  margin-bottom: 10px;
+}
+.csb-upgrade-cta a {
+  display: inline-block;
+  background: #b45309;
+  color: #fff;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.csb-upgrade-cta a:hover { background: #92400e; }
+.csb-upgrade-foot {
+  font-size: 11px;
+  color: #92400e;
+  margin-top: 10px;
+  letter-spacing: 0.02em;
+}
+
 #csb-form {
   display: flex;
   gap: 8px;
