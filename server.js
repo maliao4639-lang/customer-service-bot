@@ -464,10 +464,29 @@ app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'demo.html'));
 });
 
+// ---- Public landing / pricing page ----------------------------------------
+// Static HTML that fetches /api/pricing and /api/lifetime-availability at
+// load time so the Lifetime "X of Y left" pills stay honest.
+app.get('/pricing', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'pricing.html'));
+});
+
 // ---- Public pricing endpoint (no auth) -----------------------------------
 // Landing pages and sales replies link to /pricing for a single source of truth.
 app.get('/api/pricing', (_req, res) => {
   res.json({ tiers: PRICING, currency: 'CNY/USD', as_of: '2026-09-23' });
+});
+
+// ---- Public lifetime availability (no auth) -------------------------------
+// Counts only — no merchant identities. Safe to embed in the public landing page
+// to add scarcity ("X of 200 Lifetime spots left") without leaking who paid.
+app.get('/api/lifetime-availability', (_req, res) => {
+  const slots = getLifetimeAvailability().map((s) => ({
+    tier_key: s.tier_key,
+    limit_total: s.limit_total,
+    remaining: s.remaining,
+  }));
+  res.json({ slots });
 });
 
 // ---- Boot ------------------------------------------------------------------
