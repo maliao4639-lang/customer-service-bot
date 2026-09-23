@@ -15,7 +15,7 @@ const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 
-// ---- Pricing tiers (2026-09-23 update: C-option full adjustment) ---------
+// ---- Pricing tiers (2026-09-23 update: B-option Lifetime 3-tier) ----------
 // Display only; billing is not yet wired up. Mirrors the table in
 // AI客服推广话术.md and DM操作清单.md so docs and code stay in sync.
 //
@@ -24,8 +24,14 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT
 //   - Pro annual:     ¥949 -> ¥1439 (≈9.6 折, was 8 折)
 //   - Growth monthly: ¥299 -> ¥399 (+33%)
 //   - Growth annual:  ¥2999-> ¥3839 (≈9.6 折)
-//   - Lifetime:       ¥1999-> ¥3999 (+100%)
 //   - Free unchanged (entry point stays open)
+//   - Lifetime split into 3 tiers (B-option: 200 total slots):
+//       L1: ¥2499, 1000 对话/月,  限量 120 个
+//       L2: ¥4999, 2000 对话/月,  限量  60 个
+//       L3: ¥9999, 5000 对话/月,  限量  20 个
+//     Total Lifetime revenue potential: ¥799,800
+//     Total Lifetime LLM cost over 5 yr: ~¥360,000
+//     Total Lifetime profit over 5 yr:  ~¥440,000
 const PRICING = {
   free: {
     name: 'Free',
@@ -62,12 +68,29 @@ const PRICING = {
     monthly_conversations: 2000,
     note: '9.6 折（约 ¥320/月）',
   },
-  lifetime: {
-    name: 'Lifetime',
-    price_cny: 3999,
-    price_usd: 560,
-    monthly_conversations: 500,
-    note: '一次性付费，限量 50 个（约 27 个月 Pro）',
+  lifetime_1: {
+    name: 'Lifetime 1',
+    price_cny: 2499,
+    price_usd: 350,
+    monthly_conversations: 1000,
+    limit_total: 120,
+    note: '一次性付费，约 17 个月 Pro',
+  },
+  lifetime_2: {
+    name: 'Lifetime 2',
+    price_cny: 4999,
+    price_usd: 700,
+    monthly_conversations: 2000,
+    limit_total: 60,
+    note: '一次性付费，约 33 个月 Pro',
+  },
+  lifetime_3: {
+    name: 'Lifetime 3',
+    price_cny: 9999,
+    price_usd: 1400,
+    monthly_conversations: 5000,
+    limit_total: 20,
+    note: '一次性付费，约 67 个月 Pro',
   },
 };
 
@@ -353,7 +376,7 @@ app.get('/', (_req, res) => {
 // ---- Public pricing endpoint (no auth) -----------------------------------
 // Landing pages and sales replies link to /pricing for a single source of truth.
 app.get('/api/pricing', (_req, res) => {
-  res.json({ tiers: PRICING, currency: 'CNY/USD', as_of: '2026-09-22' });
+  res.json({ tiers: PRICING, currency: 'CNY/USD', as_of: '2026-09-23' });
 });
 
 // ---- Boot ------------------------------------------------------------------
