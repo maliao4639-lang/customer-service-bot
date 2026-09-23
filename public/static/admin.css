@@ -102,3 +102,80 @@ button.link:hover { text-decoration: underline; }
 .escalations .meta { color: var(--muted); font-size: 13px; }
 .escalations .meta strong { color: var(--text); }
 .escalations .q { margin-top: 6px; }
+
+/* Plan and usage card */
+.usage-summary { margin-top: 8px; }
+.usage-tier { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+.usage-bar {
+  height: 10px;
+  background: #f1f5f9;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+.usage-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+.usage-fill.usage-fill-warn { background: var(--warning); }
+.usage-text { font-size: 13px; }
+
+/* Upgrade card */
+.upgrade-tiers { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.upgrade-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fafbfc;
+}
+.upgrade-row.current { background: #eff6ff; border-color: #bfdbfe; }
+.upgrade-label { font-weight: 600; font-size: 15px; }
+.upgrade-price { font-size: 14px; margin-top: 2px; }
+.upgrade-note { font-size: 12px; margin-top: 2px; }
+.upgrade-slots {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #b45309;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.upgrade-slots.sold-out {
+  color: #6b7280;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+.current-tag {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--primary);
+  background: #dbeafe;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.upgrade-action { display: flex; align-items: center; }
+.upgrade-action button.primary { white-space: nowrap; }
+.upgrade-action button.link { color: var(--muted); cursor: default; }
+.upgrade-msg {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.upgrade-msg-ok { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.upgrade-msg-err { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }

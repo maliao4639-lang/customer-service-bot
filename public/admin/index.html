@@ -71,6 +71,23 @@
         </section>
 
         <section class="card">
+          <h2>Plan and usage</h2>
+          <p class="muted">Current tier and how many conversations you've used this month. Resets on the 1st.</p>
+          <div id="usage-summary" class="usage-summary">
+            <div class="usage-tier">Loading...</div>
+            <div class="usage-bar"><div class="usage-fill" id="usage-fill"></div></div>
+            <div class="usage-text muted" id="usage-text"></div>
+          </div>
+        </section>
+
+        <section class="card" id="upgrade-card">
+          <h2>Upgrade</h2>
+          <p class="muted">More conversations per month, or one-time payment. Live tier availability below.</p>
+          <div id="upgrade-tiers" class="upgrade-tiers"></div>
+          <div id="upgrade-msg" class="upgrade-msg" hidden></div>
+        </section>
+
+        <section class="card">
           <h2>Embed snippet</h2>
           <p class="muted">Paste this into your storefront's HTML (Shopify: <code>theme.liquid</code>; WooCommerce: header / footer PHP template).</p>
           <pre id="snippet" class="snippet"></pre>
