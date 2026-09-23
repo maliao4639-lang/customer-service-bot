@@ -15,9 +15,17 @@ const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 
-// ---- Pricing tiers (2026-09-22 baseline) ---------------------------------
+// ---- Pricing tiers (2026-09-23 update: C-option full adjustment) ---------
 // Display only; billing is not yet wired up. Mirrors the table in
 // AI客服推广话术.md and DM操作清单.md so docs and code stay in sync.
+//
+// Changes (vs 2026-09-22 baseline):
+//   - Pro monthly:    ¥99  -> ¥149 (+50%)
+//   - Pro annual:     ¥949 -> ¥1439 (≈9.6 折, was 8 折)
+//   - Growth monthly: ¥299 -> ¥399 (+33%)
+//   - Growth annual:  ¥2999-> ¥3839 (≈9.6 折)
+//   - Lifetime:       ¥1999-> ¥3999 (+100%)
+//   - Free unchanged (entry point stays open)
 const PRICING = {
   free: {
     name: 'Free',
@@ -28,38 +36,38 @@ const PRICING = {
   },
   pro_monthly: {
     name: 'Pro 月付',
-    price_cny: 99,
-    price_usd: 14,
+    price_cny: 149,
+    price_usd: 21,
     monthly_conversations: 500,
     note: '小品牌主推档',
   },
   pro_annual: {
     name: 'Pro 年付',
-    price_cny: 949,
-    price_usd: 135,
+    price_cny: 1439,
+    price_usd: 205,
     monthly_conversations: 500,
-    note: '8 折',
+    note: '9.6 折（约 ¥120/月）',
   },
   growth_monthly: {
     name: 'Growth 月付',
-    price_cny: 299,
-    price_usd: 42,
+    price_cny: 399,
+    price_usd: 56,
     monthly_conversations: 2000,
     note: '中型商家',
   },
   growth_annual: {
     name: 'Growth 年付',
-    price_cny: 2999,
-    price_usd: 420,
+    price_cny: 3839,
+    price_usd: 540,
     monthly_conversations: 2000,
-    note: '8 折',
+    note: '9.6 折（约 ¥320/月）',
   },
   lifetime: {
     name: 'Lifetime',
-    price_cny: 1999,
-    price_usd: 280,
+    price_cny: 3999,
+    price_usd: 560,
     monthly_conversations: 500,
-    note: '一次性付费，限量 50 个',
+    note: '一次性付费，限量 50 个（约 27 个月 Pro）',
   },
 };
 
