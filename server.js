@@ -8,7 +8,14 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 
-const { db, randomToken } = require('./db');
+const {
+  db,
+  randomToken,
+  tryConsumeConvo,
+  refundConvo,
+  tierMonthlyCap,
+  getLifetimeAvailability,
+} = require('./db');
 const { generateAnswer, loadFaqs } = require('./llm');
 
 const PORT = Number(process.env.PORT || 3000);
@@ -125,10 +132,46 @@ function requireAuth(req, res, next) {
   const merchantId = readSession(req);
   if (!merchantId) return res.status(401).json({ error: 'Not logged in' });
   const merchant = db
-    .prepare('SELECT id, email, brand_name, return_policy, shipping_info, extra_info FROM merchants WHERE id = ?')
+    .prepare('SELECT id, email, brand_name, return_policy, shipping_info, extra_info, tier FROM merchants WHERE id = ?')
     .get(merchantId);
   if (!merchant) return res.status(401).json({ error: 'Account no longer exists' });
   req.merchant = merchant;
+  next();
+}
+
+// ---- Per-merchant + IP rate limit for chat ---------------------------------
+// Cheap in-memory sliding window. Resets on process restart; that's fine for
+// abuse deterrence (a single attacker doesn't persist across restarts).
+// Key: <merchantId>|<sessionKey>  →  minute and hour buckets.
+const chatMinuteBuckets = new Map(); // key → { count, resetAt }
+const chatHourBuckets = new Map();
+
+function consumeToken(map, key, windowMs, max) {
+  const now = Date.now();
+  const entry = map.get(key);
+  if (!entry || entry.resetAt <= now) {
+    map.set(key, { count: 1, resetAt: now + windowMs });
+    return { ok: true, remaining: max - 1, resetInMs: windowMs };
+  }
+  if (entry.count >= max) {
+    return { ok: false, remaining: 0, resetInMs: entry.resetAt - now };
+  }
+  entry.count += 1;
+  return { ok: true, remaining: max - entry.count, resetInMs: entry.resetAt - now };
+}
+
+// Visitor chat is rate-limited per (merchant, session, ip) to deter scripted
+// abuse before monthly caps even matter.
+function chatRateLimit(req, res, next) {
+  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  const merchantId = req._rateMerchantId || 0;
+  const sessionKey = req.body?.session_key || 'anon';
+  // Per session per minute: 30 messages (visitor burst).
+  const m1 = consumeToken(chatMinuteBuckets, `${merchantId}|${sessionKey}`, 60_000, 30);
+  if (!m1.ok) return res.status(429).json({ error: 'Too many messages, please slow down.', retry_in_ms: m1.resetInMs });
+  // Per IP per hour: 500 messages across all merchants (script flood guard).
+  const h1 = consumeToken(chatHourBuckets, ip || 'unknown', 60 * 60_000, 500);
+  if (!h1.ok) return res.status(429).json({ error: 'Hourly limit reached for this network.', retry_in_ms: h1.resetInMs });
   next();
 }
 
@@ -280,7 +323,7 @@ function lookupMerchantByApiKey(apiKey) {
     .get(apiKey);
 }
 
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', chatRateLimit, async (req, res) => {
   const apiKey = String(req.headers['x-api-key'] || req.body?.api_key || '').trim();
   const merchant = lookupMerchantByApiKey(apiKey);
   if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
@@ -291,6 +334,20 @@ app.post('/api/chat', async (req, res) => {
 
   if (!message) return res.status(400).json({ error: 'Message is required' });
   if (message.length > 2000) return res.status(400).json({ error: 'Message too long' });
+
+  // ---- Hard limit: enforce monthly conversation cap (anti-abuse) ----------
+  // Consume a slot up-front; if the LLM call fails after this, we refund so the
+  // cap stays honest. Returning 402 (Payment Required) signals the visitor-side
+  // widget to surface an upgrade prompt instead of looping forever.
+  const consume = tryConsumeConvo(merchant.id);
+  if (!consume.ok) {
+    return res.status(402).json({
+      error: 'monthly_cap_reached',
+      used: consume.used,
+      cap: consume.cap,
+      upgrade_url: `${PUBLIC_BASE_URL}/pricing`,
+    });
+  }
 
   // Save visitor turn first
   db.prepare(
@@ -306,7 +363,21 @@ app.post('/api/chat', async (req, res) => {
     .all(merchant.id, sessionKey);
 
   const faqs = loadFaqs(merchant.id);
-  const result = await generateAnswer({ merchant, faqs, history, visitorMessage: message });
+  let result;
+  try {
+    result = await generateAnswer({ merchant, faqs, history, visitorMessage: message });
+  } catch (err) {
+    // LLM call threw — refund the slot so a transient outage doesn't burn quota.
+    refundConvo(merchant.id);
+    if (process.env.CSB_DEBUG_LLM === '1') {
+      process.stderr.write(`[chat] LLM exception: ${err?.message || err}\n`);
+    }
+    return res.status(502).json({ error: 'Our assistant is having trouble right now. Please try again in a moment.' });
+  }
+  // If we got back but the LLM returned ok:false (network/parse error), still refund.
+  if (!result.ok && !result.escalate) {
+    refundConvo(merchant.id);
+  }
 
   if (result.ok) {
     db.prepare(
@@ -346,12 +417,32 @@ app.post('/api/chat', async (req, res) => {
     });
   }
 
-  // Hard error from LLM — log to stderr only when CSB_DEBUG_LLM=1 is set,
-  // so transient upstream hiccups don't pollute normal output.
+  // LLM hard error (refunded above). Log only when debug flag is set.
   if (process.env.CSB_DEBUG_LLM === '1') {
     process.stderr.write(`[chat] LLM error: ${result.error}\n`);
   }
   res.status(502).json({ error: 'Our assistant is having trouble right now. Please try again in a moment.' });
+});
+
+// ---- Admin: lifetime slot visibility ---------------------------------------
+// Owners see how many Lifetime slots are left across the 3 tiers. Public-read
+// counts (no PII) so the landing page could surface "X of 200 Lifetime spots
+// remaining" later without leaking merchant identities.
+app.get('/api/admin/lifetime-availability', requireAuth, (_req, res) => {
+  res.json({ slots: getLifetimeAvailability() });
+});
+
+// ---- Admin: usage snapshot (so merchant sees their own remaining quota) ----
+app.get('/api/admin/usage', requireAuth, (req, res) => {
+  const m = db
+    .prepare('SELECT tier, monthly_convo_count AS used, convo_count_reset_at AS reset_at FROM merchants WHERE id = ?')
+    .get(req.merchant.id);
+  res.json({
+    tier: m?.tier || 'free',
+    used: m?.used || 0,
+    cap: tierMonthlyCap(m?.tier || 'free'),
+    reset_at: m?.reset_at || null,
+  });
 });
 
 // Returns the first merchant's API key for the local demo page so it can
