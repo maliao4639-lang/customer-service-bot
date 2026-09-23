@@ -191,6 +191,7 @@ app.get('/embed.js', (_req, res) => {
 app.post('/api/auth/signup', async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
+  const brandName = String(req.body?.brand_name || '').trim().slice(0, 120);
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Invalid email' });
@@ -200,12 +201,13 @@ app.post('/api/auth/signup', async (req, res) => {
 
   const hash = await bcrypt.hash(password, 10);
   const apiKey = 'csb_' + randomToken(16);
+  const fallbackBrand = email.split('@')[0] || 'My Store';
   const info = db
     .prepare(
       `INSERT INTO merchants (email, password_hash, brand_name, api_key)
        VALUES (?, ?, ?, ?)`
     )
-    .run(email, hash, email.split('@')[0], apiKey);
+    .run(email, hash, brandName || fallbackBrand, apiKey);
 
   res.cookie('session', makeSessionCookie(info.lastInsertRowid), {
     httpOnly: true,
@@ -469,6 +471,13 @@ app.get('/', (_req, res) => {
 // load time so the Lifetime "X of Y left" pills stay honest.
 app.get('/pricing', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'pricing.html'));
+});
+
+// ---- Public signup page ----------------------------------------------------
+// Form posts to /api/auth/signup; server sets the session cookie on success,
+// then the page redirects to /admin.
+app.get('/signup', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'signup.html'));
 });
 
 // ---- Public pricing endpoint (no auth) -----------------------------------
