@@ -15,6 +15,54 @@ const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
 
+// ---- Pricing tiers (2026-09-22 baseline) ---------------------------------
+// Display only; billing is not yet wired up. Mirrors the table in
+// AI客服推广话术.md and DM操作清单.md so docs and code stay in sync.
+const PRICING = {
+  free: {
+    name: 'Free',
+    price_cny: 0,
+    price_usd: 0,
+    monthly_conversations: 100,
+    note: '永久免费',
+  },
+  pro_monthly: {
+    name: 'Pro 月付',
+    price_cny: 99,
+    price_usd: 14,
+    monthly_conversations: 500,
+    note: '小品牌主推档',
+  },
+  pro_annual: {
+    name: 'Pro 年付',
+    price_cny: 949,
+    price_usd: 135,
+    monthly_conversations: 500,
+    note: '8 折',
+  },
+  growth_monthly: {
+    name: 'Growth 月付',
+    price_cny: 299,
+    price_usd: 42,
+    monthly_conversations: 2000,
+    note: '中型商家',
+  },
+  growth_annual: {
+    name: 'Growth 年付',
+    price_cny: 2999,
+    price_usd: 420,
+    monthly_conversations: 2000,
+    note: '8 折',
+  },
+  lifetime: {
+    name: 'Lifetime',
+    price_cny: 1999,
+    price_usd: 280,
+    monthly_conversations: 500,
+    note: '一次性付费，限量 50 个',
+  },
+};
+
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '64kb' }));
@@ -292,6 +340,12 @@ app.get('/api/demo/key', (_req, res) => {
 
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'demo.html'));
+});
+
+// ---- Public pricing endpoint (no auth) -----------------------------------
+// Landing pages and sales replies link to /pricing for a single source of truth.
+app.get('/api/pricing', (_req, res) => {
+  res.json({ tiers: PRICING, currency: 'CNY/USD', as_of: '2026-09-22' });
 });
 
 // ---- Boot ------------------------------------------------------------------
