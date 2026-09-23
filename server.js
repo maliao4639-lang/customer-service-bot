@@ -15,6 +15,7 @@ const {
   refundConvo,
   tierMonthlyCap,
   getLifetimeAvailability,
+  tryReserveLifetime,
 } = require('./db');
 const { generateAnswer, loadFaqs } = require('./llm');
 
@@ -103,7 +104,12 @@ const PRICING = {
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '64kb' }));
+app.use(express.json({
+  limit: '64kb',
+  // Preserve the raw body so the Stripe webhook handler can verify the
+  // signature against the original bytes (req.body is the parsed object).
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(cookieParser(SESSION_SECRET));
 
 // ---- Signed session cookie helpers ----------------------------------------
@@ -498,7 +504,179 @@ app.get('/api/lifetime-availability', (_req, res) => {
   res.json({ slots });
 });
 
-// ---- Boot ------------------------------------------------------------------
+// ---- Billing (Stripe + mock fallback) -------------------------------------
+// Two paths converge on applyUpgrade():
+//   1) POST /api/billing/checkout    real Stripe Checkout Session → user pays
+//      on Stripe-hosted page → Stripe POSTs webhook → /api/billing/webhook
+//      → applyUpgrade (needs STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET).
+//   2) POST /api/billing/upgrade-mock immediate local upgrade for demos
+//      (no Stripe round-trip; always enabled for testing).
+//
+// Price keys map to (Stripe price id, internal tier key, lifetime slot key).
+// Anything not listed is rejected.
+
+const PRICE_CATALOG = {
+  pro_monthly:    { stripe_price_env: 'STRIPE_PRICE_PRO_MONTHLY',    tier: 'pro_monthly',    lifetime: null },
+  pro_annual:     { stripe_price_env: 'STRIPE_PRICE_PRO_ANNUAL',     tier: 'pro_annual',     lifetime: null },
+  growth_monthly: { stripe_price_env: 'STRIPE_PRICE_GROWTH_MONTHLY', tier: 'growth_monthly', lifetime: null },
+  growth_annual:  { stripe_price_env: 'STRIPE_PRICE_GROWTH_ANNUAL',  tier: 'growth_annual',  lifetime: null },
+  lifetime_1:     { stripe_price_env: 'STRIPE_PRICE_LIFETIME_1',     tier: 'lifetime_1',     lifetime: 'lifetime_1' },
+  lifetime_2:     { stripe_price_env: 'STRIPE_PRICE_LIFETIME_2',     tier: 'lifetime_2',     lifetime: 'lifetime_2' },
+  lifetime_3:     { stripe_price_env: 'STRIPE_PRICE_LIFETIME_3',     tier: 'lifetime_3',     lifetime: 'lifetime_3' },
+};
+
+const TIER_LABEL = {
+  pro_monthly: 'Pro Monthly', pro_annual: 'Pro Annual',
+  growth_monthly: 'Growth Monthly', growth_annual: 'Growth Annual',
+  lifetime_1: 'Lifetime 1', lifetime_2: 'Lifetime 2', lifetime_3: 'Lifetime 3',
+};
+
+// Used to decide whether an upgrade is a real tier change (worth reserving a
+// Lifetime slot) or a no-op (merchant already at or above this tier).
+const TIER_RANK = {
+  free: 0, pro_monthly: 1, pro_annual: 2,
+  growth_monthly: 3, growth_annual: 4,
+  lifetime_1: 5, lifetime_2: 6, lifetime_3: 7,
+};
+
+function getStripePriceId(priceKey) {
+  const envName = PRICE_CATALOG[priceKey]?.stripe_price_env;
+  return envName ? (process.env[envName] || null) : null;
+}
+
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || null;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || null;
+
+// Core upgrade logic shared by mock + real paths. Idempotent: if the merchant
+// already has a higher tier, we still update (allows downgrade-free upgrades
+// from monthly → annual; doesn't overwrite a higher Lifetime tier).
+// Returns { ok, tier, lifetime_remaining }.
+function applyUpgrade(merchantId, priceKey) {
+  const entry = PRICE_CATALOG[priceKey];
+  if (!entry) return { ok: false, error: 'unknown_price_key' };
+
+  const currentTier = db.prepare('SELECT tier FROM merchants WHERE id = ?').get(merchantId)?.tier || 'free';
+  const currentRank = TIER_RANK[currentTier] ?? 0;
+  const newRank = TIER_RANK[entry.tier] ?? 0;
+
+  // If the merchant is already at this tier or higher, no-op. Returning ok
+  // keeps webhook idempotent (Stripe sends the same event on retries).
+  if (currentRank >= newRank) {
+    return { ok: true, tier: currentTier, lifetime_remaining: null, no_op: true };
+  }
+
+  // Lifetime slots are scarce: reserve before committing the tier change so a
+  // sold-out tier never silently upgrades a merchant to a "dead" tier.
+  let lifetimeRemaining = null;
+  if (entry.lifetime) {
+    const slot = tryReserveLifetime(entry.lifetime);
+    if (!slot.ok) {
+      return { ok: false, error: 'lifetime_sold_out', tier_key: entry.lifetime };
+    }
+    lifetimeRemaining = slot.remaining;
+  }
+
+  // Reset monthly counter on upgrade so a fresh tier starts fresh.
+  db.prepare(
+      `UPDATE merchants
+          SET tier = ?,
+              monthly_convo_count = 0,
+              convo_count_reset_at = date('now')
+        WHERE id = ?`
+    ).run(entry.tier, merchantId);
+
+  return { ok: true, tier: entry.tier, lifetime_remaining: lifetimeRemaining };
+}
+
+// 1) Real Stripe Checkout (only when keys are configured).
+app.post('/api/billing/checkout', requireAuth, async (req, res) => {
+  if (!STRIPE_SECRET_KEY) {
+    return res.status(503).json({ error: 'stripe_not_configured' });
+  }
+  const priceKey = String(req.body?.price_key || '');
+  const stripePriceId = getStripePriceId(priceKey);
+  if (!stripePriceId) return res.status(400).json({ error: 'unknown_price_key' });
+
+  try {
+    const form = new URLSearchParams();
+    form.set('mode', PRICE_CATALOG[priceKey].lifetime ? 'payment' : 'subscription');
+    form.set('line_items[0][price]', stripePriceId);
+    form.set('line_items[0][quantity]', '1');
+    form.set('client_reference_id', String(req.merchant.id));
+    form.set('customer_email', req.merchant.email);
+    form.set('success_url', `${PUBLIC_BASE_URL}/admin?billing=success&tier=${PRICE_CATALOG[priceKey].tier}`);
+    form.set('cancel_url', `${PUBLIC_BASE_URL}/admin?billing=cancelled`);
+    const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${STRIPE_SECRET_KEY}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: form.toString(),
+    });
+    const data = await stripeRes.json();
+    if (!stripeRes.ok) {
+      console.error('[billing] stripe error:', data);
+      return res.status(502).json({ error: 'stripe_error', detail: data?.error?.message });
+    }
+    res.json({ ok: true, url: data.url, session_id: data.id });
+  } catch (err) {
+    console.error('[billing] exception:', err);
+    res.status(500).json({ error: 'internal' });
+  }
+});
+
+// 2) Mock checkout: instant upgrade (test/demo only). Always available so we
+// can exercise the upgrade UI without a Stripe round-trip.
+app.post('/api/billing/upgrade-mock', requireAuth, (req, res) => {
+  if (process.env.CSB_ALLOW_MOCK_BILLING !== '1') {
+    return res.status(403).json({ error: 'mock_billing_disabled' });
+  }
+  const priceKey = String(req.body?.price_key || '');
+  const result = applyUpgrade(req.merchant.id, priceKey);
+  if (!result.ok) return res.status(409).json(result);
+  res.json(result);
+});
+
+// 3) Stripe webhook receiver. Only registered when STRIPE_WEBHOOK_SECRET is
+// set so dev servers without it don't reject real requests by accident.
+if (STRIPE_WEBHOOK_SECRET) {
+  app.post('/api/billing/webhook', async (req, res) => {
+    // We need the raw body for signature verification; express.json is fine
+    // here because we read req.body as a Buffer via the raw parser.
+    const sig = req.headers['stripe-signature'];
+    let event;
+    try {
+      // Lazy-require so dev installs without `stripe` package still work.
+      const Stripe = require('stripe');
+      const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+      event = stripe.webhooks.constructEvent(req.rawBody, sig, STRIPE_WEBHOOK_SECRET);
+    } catch (err) {
+      console.error('[billing webhook] signature verification failed:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const merchantId = Number(session.client_reference_id);
+      const priceKey = Object.entries(PRICE_CATALOG).find(
+        ([, e]) => e.stripe_price_env && process.env[e.stripe_price_env] === session.line_items?.[0]?.price?.id
+      )?.[0];
+      if (merchantId && priceKey) {
+        applyUpgrade(merchantId, priceKey);
+      } else {
+        console.error('[billing webhook] could not resolve merchant/price from session:', session.id);
+      }
+    } else if (event.type === 'customer.subscription.deleted') {
+      // Subscription cancelled — downgrade merchant to free at period end.
+      const sub = event.data.object;
+      const merchantId = Number(sub.metadata?.merchant_id);
+      if (merchantId) {
+        db.prepare(`UPDATE merchants SET tier = 'free', monthly_convo_count = 0, convo_count_reset_at = date('now') WHERE id = ?`).run(merchantId);
+      }
+    }
+    res.json({ received: true });
+  });
+}
 
 if (require.main === module) {
   app.listen(PORT, () => {
