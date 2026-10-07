@@ -196,6 +196,12 @@ app.get('/embed.js', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'widget', 'embed.js'));
 });
 
+// ---- Brand concept demos ---------------------------------------------------
+// Static, no-LLM demo used for personalized merchant outreach.
+app.get('/demo/sasa', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'demo', 'sasa.html'));
+});
+
 // ---- Public auth (signup / login) ------------------------------------------
 
 app.post('/api/auth/signup', async (req, res) => {
