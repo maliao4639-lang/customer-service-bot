@@ -1,5 +1,8 @@
 #csb-root { all: initial; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 
+/* Component display rules must preserve the hidden state of the panel and email form. */
+#csb-root [hidden] { display: none !important; }
+
 /* Floating bubble button */
 #csb-bubble {
   position: fixed;
