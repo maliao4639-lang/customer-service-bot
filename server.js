@@ -114,6 +114,17 @@ const PRICING = {
 const app = express();
 app.disable('x-powered-by');
 require('./public-guards')(app, PUBLIC_BASE_URL);
+// One line per Shopify document and every POST, with no query string.
+// id_token and hmac stay out of the journal. This runs before body parsing so
+// a rejected payload is still visible.
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    const pathOnly = req.path || '';
+    if (req.method !== 'POST' && pathOnly !== '/webhooks' && !pathOnly.startsWith('/shopify')) return;
+    console.log(`[http] ${req.method} ${pathOnly} ${res.statusCode}`);
+  });
+  next();
+});
 app.use(express.json({
   limit: '64kb',
   // Preserve the raw body so the Stripe webhook handler can verify the
@@ -121,6 +132,9 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 app.use((error, req, res, next) => {
+  if (error.type === 'entity.parse.failed' && /webhook/i.test(req.path || '')) {
+    console.log('[shopify-webhook] outcome=bad_json topic=- shop=-');
+  }
   if (/^\/api\/order-lookup(?:\/|$)/i.test(req.path)) {
     return res.status(400).set('Cache-Control', 'no-store').json({ error: 'Invalid order lookup request.' });
   }
@@ -143,8 +157,8 @@ app.get('/billing/paddle', requireAuth, (req, res) => {
 
 
 // Shopify APIs authenticate with App Bridge ID tokens, independently of cookies.
-// CLI appends the toml uri (/webhooks) to application_url (.../shopify), which
-// is this mount. A dev tunnel whose origin has no /shopify path posts to /webhooks.
+// Released webhooks use https://getshopreply.com/shopify/webhooks. These aliases
+// still accept a relative join (/webhooks) and a doubled prefix.
 app.post('/webhooks', (req, res, next) => { req.url = '/webhooks'; shopify.router(req, res, next); });
 app.use('/shopify', shopify.router);
 app.use('/api/chat', shopify.storefrontCors);
@@ -570,6 +584,8 @@ app.get('/', (_req, res) => {
   if (typeof _req.query.shop === 'string' && /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(_req.query.shop)) {
     const params = new URLSearchParams();
     for (const key of ['shop', 'host', 'embedded']) if (typeof _req.query[key] === 'string') params.set(key, _req.query[key]);
+    res.set('Content-Security-Policy', shopify.frameAncestors(_req.query.shop));
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     return res.redirect(`/shopify?${params}`);
   }
   res.sendFile(path.join(__dirname, 'public', 'home.html'));

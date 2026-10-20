@@ -28,7 +28,9 @@ for (const topic of ['app/uninstalled', 'app_subscriptions/update', 'customers/d
   must(toml.includes(`"${topic}"`), `missing webhook topic ${topic}`);
 }
 const uris = [...toml.matchAll(/^uri\s*=\s*"([^"]+)"/gm)].map((m) => m[1]);
-must(uris.length === 2 && uris.every((u) => u === '/webhooks'), 'both webhook uris must be /webhooks so CLI appends them to .../shopify');
+must(uris.length === 2 && uris.every((u) => u === 'https://getshopreply.com/shopify/webhooks'), 'both webhook uris must be the absolute production URL');
+must(shopify.includes('https://admin.shopify.cn') && shopify.includes('https://admin.shop.dev') && shopify.includes('https://admin.myshopify.io'), 'admin frame ancestors');
+must(!shopify.includes('*.myshopify.com') && !shopify.includes('frame-ancestors *'), 'no wildcard frame ancestor');
 must(shopify.includes('amount: 21') && shopify.includes("interval: 'EVERY_30_DAYS'"), 'Pro monthly is USD 21 / 30 days');
 must(shopify.includes('amount: 205') && shopify.includes("interval: 'ANNUAL'"), 'Pro annual is USD 205 / year');
 must(/case 'free':\s+return 100;/.test(db), 'free cap 100');

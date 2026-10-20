@@ -18,12 +18,13 @@ redirect_urls = ["https://getshopreply.com/shopify"]
 [webhooks]
 api_version = "2026-10"
 
-# uri is appended to application_url. application_url already ends in /shopify,
-# so this relative path is https://getshopreply.com/shopify/webhooks.
+# Absolute URL. A relative uri is joined onto application_url and is also
+# rewritten to the dev tunnel while `shopify app dev` is running. An absolute
+# URI stays on this host for the released version.
 [[webhooks.subscriptions]]
 topics = ["app/uninstalled", "app_subscriptions/update"]
-uri = "/webhooks"
+uri = "https://getshopreply.com/shopify/webhooks"
 
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-uri = "/webhooks"
+uri = "https://getshopreply.com/shopify/webhooks"

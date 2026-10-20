@@ -43,7 +43,7 @@
 
 线上 `GET /shopify` 已转到 Node，当前响应是 Express `Cannot GET /shopify`，说明这版代码尚未部署，不是 Caddy 缺少路径。隐私页仍是 10 月 1 日的旧文，邮箱仍是 Gmail。
 
-Shopify CLI 会把 toml 里的相对 `uri` 接到 `application_url` 后面。原先 `uri = "/shopify/webhooks"` 会变成 `https://getshopreply.com/shopify/shopify/webhooks`，应用实际路由是 `/shopify/webhooks`。现改为 `uri = "/webhooks"`。同一处理函数同时接受 `/shopify/webhooks`、`/webhooks` 和 `/shopify/shopify/webhooks`。每条通知打一行不含正文的 `[shopify-webhook]` 日志。店铺身份同时接受数字 id 和 `gid://shopify/Shop/<数字>`；官方卸载示例里的 `myshopify_domain: null` 不再被当成域名不匹配。
+发布版 webhook `uri` 现在是绝对地址 `https://getshopreply.com/shopify/webhooks`。相对路径会被 CLI 接到 `application_url` 上，`app dev` 还会把它改到隧道。同一处理函数仍接受 `/shopify/webhooks`、`/webhooks` 和 `/shopify/shopify/webhooks`。每条通知打一行不含正文的 `[shopify-webhook]` 日志；每个 POST 另有一行 `[http]`，不含查询串。嵌入页的 `frame-ancestors` 包含 `admin.shopify.com`、`admin.shopify.cn`、`admin.myshopify.io`、`admin.shop.dev` 和当前店铺。店铺身份同时接受数字 id 和 `gid://shopify/Shop/<数字>`；官方卸载示例里的 `myshopify_domain: null` 不再被当成域名不匹配。
 
 真实卸载通知仍要负责人在 `shopify app dev` 保持运行时再看终端里的 `outcome=ok`。这次没有登录 Shopify，没有发布版本，没有改 Vultr。
 

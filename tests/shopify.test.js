@@ -99,6 +99,8 @@ test('Shopify integration: isolated database and mocked external services', asyn
       const redirect = await nativeFetch(base + '/?shop=' + A + '&host=test-host&id_token=do-not-forward', { redirect: 'manual' });
       assert.equal(redirect.status, 302);
       assert.equal(redirect.headers.get('location'), '/shopify?shop=' + A + '&host=test-host');
+      assert.ok(redirect.headers.get('content-security-policy').includes('https://' + A));
+      assert.ok(redirect.headers.get('content-security-policy').includes('https://admin.shopify.cn'));
     });
     await t.test('rejects absent, tampered, expired and wrong-store session claims', async () => {
       assert.equal((await request('/shopify/api/state')).status, 401);
@@ -255,7 +257,13 @@ test('Shopify integration: isolated database and mocked external services', asyn
       const shell = await request('/shopify?shop=' + A);
       assert.equal(shell.status, 200); assert.ok(shell.data.includes('test-client'));
       assert.ok(!shell.data.includes(process.env.SHOPIFY_API_SECRET));
-      assert.ok(shell.headers.get('content-security-policy').includes(A));
+      const csp = shell.headers.get('content-security-policy');
+      for (const origin of ['https://admin.shopify.com', 'https://admin.shopify.cn', 'https://admin.myshopify.io', 'https://admin.shop.dev', 'https://' + A]) {
+        assert.ok(csp.includes(origin), origin);
+      }
+      assert.equal(csp.includes('*'), false);
+      assert.equal(shell.headers.get('x-frame-options'), null);
+      assert.equal(shell.headers.get('cross-origin-resource-policy'), 'cross-origin');
       assert.equal((await request('/privacy')).status, 200); assert.equal((await request('/terms')).status, 200);
       assert.equal((await request('/embed.js')).status, 200);
     });

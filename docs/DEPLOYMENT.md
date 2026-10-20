@@ -8,7 +8,7 @@ Use the existing backend and domain, as selected by the owner:
 | --- | --- |
 | App URL | `https://getshopreply.com/shopify` |
 | Redirect URL | `https://getshopreply.com/shopify` |
-| Webhooks | `https://getshopreply.com/shopify/webhooks` (toml uri is `/webhooks`; CLI appends it to the app URL) |
+| Webhooks | `https://getshopreply.com/shopify/webhooks` (absolute `uri` in `shopify.app.toml`) |
 | Privacy / terms | `https://getshopreply.com/privacy`, `https://getshopreply.com/terms` |
 | Support | `support@getshopreply.com` |
 | Host / AI | Vultr / DeepSeek, confirmed by owner |

@@ -86,6 +86,37 @@ journalctl -u csb -n 30 --no-pager
 - 第二个命令要包含 `support@getshopreply.com` 和 `No. 269 Chenghua North Road`，不能再是 `maliao4639@gmail.com`。
 - 日志要有 `[boot] public_base=https://getshopreply.com llm_base=https://api.deepseek.com llm_model=... shopify_configured=true`。`shopify_configured=false` 表示三个 Shopify 变量里有一个不对。
 
+## B2. 这次修复的服务器更新（Vultr 网页终端粘贴）
+
+只更新 `feat/shopify-app-store`。不要动 `main`。保留 `.env` 和 `data`。
+
+```sh
+set -e
+systemctl stop csb
+rm -rf /opt/csb-new
+mkdir -p /opt/csb-new /var/backups/csb
+cp -a /opt/csb/.env /var/backups/csb/env-before-frame-fix
+cp -a /opt/csb/data /var/backups/csb/data-before-frame-fix
+curl -fsSL -o /tmp/csb-feat-shopify.tgz https://codeload.github.com/maliao4639-lang/customer-service-bot/tar.gz/refs/heads/feat/shopify-app-store
+tar -xzf /tmp/csb-feat-shopify.tgz -C /opt/csb-new --strip-components=1
+cp -a /opt/csb/.env /opt/csb-new/.env
+rm -rf /opt/csb-new/data
+cp -a /opt/csb-new/. /opt/csb/
+systemctl restart csb
+systemctl is-active csb
+journalctl -u csb -n 20 --no-pager
+```
+
+启动日志仍要有 `shopify_configured=true`。然后在服务器上执行：
+
+```sh
+curl -sS -D - -o /dev/null -X POST -H 'Content-Type: application/json' --data '{}' https://getshopreply.com/shopify/webhooks
+journalctl -u csb -n 30 --no-pager | grep -E '\[http\]|\[shopify-webhook\]'
+curl -sSI 'https://getshopreply.com/shopify?shop=getshopreply-test-4k85f5hy.myshopify.com&host=x' | grep -i content-security-policy
+```
+
+必须看到 `[http] POST /shopify/webhooks 401` 和 `[shopify-webhook] outcome=bad_hmac`。CSP 里必须有 `admin.shopify.cn`。没有这两行说明新代码没在跑。
+
 ## C. 把配置发布到 Dev Dashboard（B 的 curl 成功之后）
 
 ```powershell
@@ -107,7 +138,7 @@ npm run shopify -- app deploy --config shopify.app.toml
 | `customers/redact` | `https://getshopreply.com/shopify/webhooks` |
 | `shop/redact` | `https://getshopreply.com/shopify/webhooks` |
 
-如果还显示 `https://example.com`，说明新版本没有 release。如果显示 `https://getshopreply.com/shopify/shopify/webhooks`，这版代码也能收到，但请确认 toml 里的 `uri` 仍是 `/webhooks` 后再 deploy 一次。
+如果还显示 `https://example.com`、隧道域名，或 `https://getshopreply.com/shopify/shopify/webhooks`，说明这一版没有 release。toml 里的 `uri` 必须是 `https://getshopreply.com/shopify/webhooks`。测生产时不要开着 `shopify app dev`。
 
 ## D. 用生产地址再测一次 getshopreply-test
 

@@ -48,6 +48,21 @@ function config() {
   return c;
 }
 function validShop(shop) { return typeof shop === 'string' && /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop); }
+// Explicit Shopify admin origins. A wildcard is rejected by the app review check.
+// admin.shopify.cn is the admin host App Bridge accepts for merchants in China;
+// admin.shop.dev and admin.myshopify.io are the extra ancestors Shopify's own
+// embed middleware sends. The shop origin is added only after validShop().
+const ADMIN_FRAME_ANCESTORS = Object.freeze([
+  'https://admin.shopify.com',
+  'https://admin.shopify.cn',
+  'https://admin.myshopify.io',
+  'https://admin.shop.dev',
+]);
+function frameAncestors(shop) {
+  const origins = [...ADMIN_FRAME_ANCESTORS];
+  if (validShop(shop)) origins.push(`https://${shop}`);
+  return `frame-ancestors ${origins.join(' ')};`;
+}
 function equal(a, b) { return a.length === b.length && crypto.timingSafeEqual(a, b); }
 function seal(value) {
   const iv = crypto.randomBytes(12);
@@ -173,13 +188,17 @@ async function publishEmbed(shop) {
 }
 const safe = fn => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 
-router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-router.get('/', (req, res) => {
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  // Set on every /shopify response, including the install document and a 404,
+  // so a proxy cannot replace a missing policy with one that blocks the admin frame.
+  res.set('Content-Security-Policy', frameAncestors(req.query.shop));
+  res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+});
+router.get('/', (_req, res) => {
   try {
     const c = config();
-    // Query parameters cannot widen framing to an arbitrary origin.
-    const shop = validShop(req.query.shop) ? req.query.shop : null;
-    res.set('Content-Security-Policy', `frame-ancestors https://admin.shopify.com${shop ? ` https://${shop}` : ''};`);
     res.type('html').send(fs.readFileSync(path.join(__dirname, 'public/shopify/index.html'), 'utf8')
       .replaceAll('__SHOPIFY_API_KEY__', c.client.replace(/[^a-zA-Z0-9_-]/g, '')));
   } catch (_) { res.status(503).send('Shopify app setup is pending.'); }
@@ -347,8 +366,11 @@ function webhookShopProblem(row, headerShop, topic, body) {
   if (!expected || !actual || expected !== actual) return 'shop_id_mismatch';
   return null;
 }
+function logField(value) {
+  return String(value || '-').replace(/[^\x20-\x7e]/g, '').slice(0, 160) || '-';
+}
 function webhookLog(outcome, topic, shop) {
-  console.log(`[shopify-webhook] outcome=${outcome} topic=${topic || '-'} shop=${shop || '-'}`);
+  console.log(`[shopify-webhook] outcome=${logField(outcome)} topic=${logField(topic)} shop=${logField(shop)}`);
 }
 function isShopifyMerchant(id) { return !!db.prepare('SELECT 1 FROM shopify_shops WHERE merchant_id=?').get(id); }
 function privacyEpoch(id) { return db.prepare('SELECT privacy_epoch FROM shopify_shops WHERE merchant_id=?').get(id)?.privacy_epoch ?? null; }
@@ -458,4 +480,4 @@ router.use((err, _req, res, _next) => {
   if (err.status === 401) res.set('X-Shopify-Retry-Invalid-Session-Request', '1');
   res.status(err.status || 502).json({ error: err.status ? err.message : 'Shopify request failed. Please try again.' });
 });
-module.exports = { router, verifySession, seal, unseal, isShopifyMerchant, privacyEpoch, rememberVisitor, storefrontCors, purgeExpired, PLANS };
+module.exports = { router, verifySession, seal, unseal, isShopifyMerchant, privacyEpoch, rememberVisitor, storefrontCors, purgeExpired, PLANS, frameAncestors };
