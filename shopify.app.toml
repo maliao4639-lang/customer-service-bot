@@ -1,0 +1,30 @@
+# Linked to the existing GetShopReply application using Shopify CLI.
+client_id = "361cd9115e2b28f23410adcc5f64050c"
+name = "GetShopReply"
+application_url = "https://getshopreply.com/shopify"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[access_scopes]
+# Manual policy and FAQ entry; billing and app-owned metafields need no content scopes.
+scopes = ""
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = ["https://getshopreply.com/shopify"]
+
+[webhooks]
+api_version = "2026-10"
+
+# Absolute URL. A relative uri is joined onto application_url and is also
+# rewritten to the dev tunnel while `shopify app dev` is running. An absolute
+# URI stays on this host for the released version.
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled", "app_subscriptions/update"]
+uri = "https://getshopreply.com/shopify/webhooks"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "https://getshopreply.com/shopify/webhooks"

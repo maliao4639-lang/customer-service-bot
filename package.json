@@ -6,7 +6,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "test": "node scripts/smoke.js && node scripts/billing-regression.js && node scripts/public-regression.js && node scripts/paddle-regression.js && node scripts/order-lookup-regression.js && node --test tests/*.test.js",
+    "shopify": "node scripts/run-shopify.js",
+    "check": "node --check server.js && node --check db.js && node --check runtime-config.js && node --check shopify.js && node --check scripts/run-shopify.js && node --check scripts/configure-shopify.js && node --check scripts/verify-shopify-config.js && node --check public/static/shopify.js && node --check public/widget/embed.js && node --check extensions/shopreply-theme/assets/shopreply-loader.js && node --check llm.js && node --check paddle.js && node --check public-guards.js && node --check order-lookup/bootstrap.js && node --check order-lookup/router.js && node --check order-lookup/providers.js && node --check order-lookup/security.js && node --check order-lookup/store.js && node scripts/verify-shopify-config.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -15,5 +18,8 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "stripe": "^22.6.2"
+  },
+  "engines": {
+    "node": ">=24 <25"
   }
 }

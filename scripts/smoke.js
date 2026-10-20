@@ -7,67 +7,20 @@ const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 
-const TMP_DB = path.join(__dirname, '..', 'data', `smoke-${Date.now()}.db`);
+const tempDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'csb-smoke-'));
+process.env.CSB_DATA_DIR = tempDir;
+const TMP_DB = path.join(tempDir, 'app.db');
 
-// Monkey-patch db.js to use the throwaway file BEFORE requiring server.
-const dbModulePath = require.resolve('../db');
-require.cache[dbModulePath] = {
-  id: dbModulePath,
-  filename: dbModulePath,
-  loaded: true,
-  exports: (() => {
-    const { DatabaseSync } = require('node:sqlite');
-    const db = new DatabaseSync(TMP_DB);
-    db.exec('PRAGMA journal_mode = WAL;');
-    db.exec('PRAGMA foreign_keys = ON;');
-    db.exec(`
-      CREATE TABLE merchants (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        brand_name TEXT NOT NULL DEFAULT 'Our Store',
-        return_policy TEXT NOT NULL DEFAULT '',
-        shipping_info TEXT NOT NULL DEFAULT '',
-        extra_info TEXT NOT NULL DEFAULT '',
-        api_key TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE TABLE faqs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        merchant_id INTEGER NOT NULL,
-        question TEXT NOT NULL,
-        answer TEXT NOT NULL,
-        position INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE CASCADE
-      );
-      CREATE TABLE conversations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        merchant_id INTEGER NOT NULL,
-        session_key TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE CASCADE
-      );
-      CREATE TABLE escalations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        merchant_id INTEGER NOT NULL,
-        email TEXT NOT NULL,
-        question TEXT NOT NULL,
-        resolved INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        FOREIGN KEY (merchant_id) REFERENCES merchants(id) ON DELETE CASCADE
-      );
-    `);
-    function randomToken(bytes = 24) { return crypto.randomBytes(bytes).toString('hex'); }
-    return { db, randomToken };
-  })(),
-};
-
+// Isolated audit copy uses the actual database schema.
+process.env.NODE_ENV = 'test';
+process.env.STRIPE_SECRET_KEY = '';
+process.env.STRIPE_WEBHOOK_SECRET = '';
+process.env.CSB_ENABLE_DEMO_KEY = '0';
+process.env.CSB_ALLOW_MOCK_BILLING = '0';
 process.env.PORT = '0'; // let the OS pick
 process.env.LLM_API_KEY = 'sk-smoke-no-real-call';
 process.env.LLM_BASE_URL = 'http://127.0.0.1:1'; // closed port => fetch will fail loudly
-process.env.SESSION_SECRET = 'smoke-secret';
+process.env.SESSION_SECRET = 'smoke-only-secret-with-at-least-32-characters';
 process.env.PUBLIC_BASE_URL = 'http://placeholder';
 
 const app = require('../server');
@@ -78,6 +31,7 @@ function getBaseUrl(server) {
 }
 
 async function waitReady(server) {
+  if (!server.listening) await require('node:events').once(server, 'listening');
   const base = getBaseUrl(server);
   for (let i = 0; i < 100; i++) {
     try {
@@ -95,7 +49,7 @@ function fail(msg) {
 }
 
 async function main() {
-  const server = app.listen(0);
+  const server = app.listen(0, '127.0.0.1');
   try {
     const base = await waitReady(server);
 
@@ -189,10 +143,11 @@ async function main() {
     console.log('  static routes:           home, embed.js, admin OK');
     console.log('  auth + admin CRUD:       signup, me, store, FAQ OK');
     console.log('  visitor chat api:        502 with bogus LLM key (expected), 401 with bad api_key (expected)');
-    console.log(`  API key: ${apiKey}`);
+    console.log('  generated test key: redacted');
   } finally {
     server.close();
-    try { fs.unlinkSync(TMP_DB); } catch (_) {}
+    require('../db').db.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 

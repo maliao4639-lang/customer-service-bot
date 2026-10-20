@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Create your account — GetShopReply</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Sign up to add an auto-reply assistant to your Shopify or WooCommerce store." />
+    <style>
+      :root {
+        --ink: #0f172a;
+        --muted: #475569;
+        --line: #e2e8f0;
+        --bg: #f8fafc;
+        --accent: #2563eb;
+        --err: #b91c1c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        margin: 0;
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.55;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 32px 28px;
+        max-width: 420px;
+        width: 100%;
+        box-shadow: 0 8px 24px -16px rgba(15, 23, 42, 0.18);
+      }
+      h1 { font-size: 24px; margin: 0 0 6px; }
+      .lede { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--muted);
+        margin: 14px 0 6px;
+      }
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        font-size: 15px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        outline: none;
+        background: #fff;
+        color: var(--ink);
+      }
+      input:focus { border-color: var(--accent); }
+      .submit {
+        margin-top: 22px;
+        width: 100%;
+        padding: 12px 14px;
+        background: var(--ink);
+        color: #fff;
+        border: 0;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      .submit:hover { background: #1e293b; }
+      .submit:disabled { background: #94a3b8; cursor: not-allowed; }
+      .alt {
+        margin-top: 18px;
+        font-size: 14px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .alt a { color: var(--accent); text-decoration: none; }
+      .alt a:hover { text-decoration: underline; }
+      .err {
+        display: none;
+        margin-top: 14px;
+        padding: 10px 12px;
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        color: var(--err);
+        font-size: 14px;
+      }
+      .err.show { display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Create your account</h1>
+      <p class="lede">100 free AI replies every month. No card needed.</p>
+
+      <form id="signup-form" autocomplete="on" novalidate>
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" required autocomplete="email" placeholder="you@yourshop.com" />
+
+        <label for="brand">Store name <small style="font-weight:400;color:var(--muted);">(optional)</small></label>
+        <input id="brand" name="brand" type="text" maxlength="120" placeholder="My Shopify Store" />
+
+        <label for="password">Password <small style="font-weight:400;color:var(--muted);">(6+ characters)</small></label>
+        <input id="password" name="password" type="password" required autocomplete="new-password" minlength="6" placeholder="••••••••" />
+
+        <div id="err" class="err" role="alert"></div>
+
+        <button class="submit" id="submit" type="submit">Create account</button>
+      </form>
+
+      <p class="alt">
+        Already have an account? <a href="/admin">Log in</a>
+      </p>
+    </div>
+
+    <script>
+      (function () {
+        var form = document.getElementById('signup-form');
+        var emailEl = document.getElementById('email');
+        var brandEl = document.getElementById('brand');
+        var passEl = document.getElementById('password');
+        var errEl = document.getElementById('err');
+        var btn = document.getElementById('submit');
+
+        function showError(msg) {
+          errEl.textContent = msg;
+          errEl.classList.add('show');
+        }
+        function clearError() {
+          errEl.textContent = '';
+          errEl.classList.remove('show');
+        }
+
+        form.addEventListener('submit', function (e) {
+          e.preventDefault();
+          clearError();
+          var email = emailEl.value.trim();
+          var password = passEl.value;
+          var brand = brandEl.value.trim();
+          if (!email || !password) {
+            showError('Email and password are required.');
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = 'Creating…';
+          fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ email: email, password: password, brand_name: brand || undefined }),
+          })
+            .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+            .then(function (r) {
+              if (!r.ok) {
+                showError(r.body && r.body.error ? r.body.error : 'Could not create account. Please try again.');
+                btn.disabled = false;
+                btn.textContent = 'Create account';
+                return;
+              }
+              // Signed in server-side (cookie set); hop to admin console.
+              window.location.href = '/admin';
+            })
+            .catch(function () {
+              showError('Network error. Please try again.');
+              btn.disabled = false;
+              btn.textContent = 'Create account';
+            });
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -20,12 +20,17 @@ const {
   expireTrials,
   getTrialStatus,
   TRIAL_DAYS,
+  isWebhookEventProcessed,
+  recordWebhookEvent,
 } = require('./db');
 const { generateAnswer, loadFaqs } = require('./llm');
 
 const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
-const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
+if (process.env.NODE_ENV === 'production' && SESSION_SECRET.length < 32) {
+  throw new Error('Production SESSION_SECRET must contain at least 32 characters');
+}
+const PUBLIC_BASE_URL = require('./runtime-config').publicBaseUrl();
 
 // ---- Pricing tiers (2026-09-23 update: B-option Lifetime 3-tier) ----------
 // Display only; billing is not yet wired up. Mirrors the table in
@@ -108,13 +113,55 @@ const PRICING = {
 
 const app = express();
 app.disable('x-powered-by');
+require('./public-guards')(app, PUBLIC_BASE_URL);
+// One line per Shopify document and every POST, with no query string.
+// id_token and hmac stay out of the journal. This runs before body parsing so
+// a rejected payload is still visible.
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    const pathOnly = req.path || '';
+    if (req.method !== 'POST' && pathOnly !== '/webhooks' && !pathOnly.startsWith('/shopify')) return;
+    console.log(`[http] ${req.method} ${pathOnly} ${res.statusCode}`);
+  });
+  next();
+});
 app.use(express.json({
   limit: '64kb',
   // Preserve the raw body so the Stripe webhook handler can verify the
   // signature against the original bytes (req.body is the parsed object).
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
+app.use((error, req, res, next) => {
+  if (error.type === 'entity.parse.failed' && /webhook/i.test(req.path || '')) {
+    console.log('[shopify-webhook] outcome=bad_json topic=- shop=-');
+  }
+  if (/^\/api\/order-lookup(?:\/|$)/i.test(req.path)) {
+    return res.status(400).set('Cache-Control', 'no-store').json({ error: 'Invalid order lookup request.' });
+  }
+  next(error);
+});
 app.use(cookieParser(SESSION_SECRET));
+// Shopify ownership is established independently from standalone login/billing.
+const shopify = require('./shopify');
+require('./order-lookup/bootstrap').mountPilot(app, key => {
+  const merchant = lookupMerchantByApiKey(key);
+  return merchant && !shopify.isShopifyMerchant(merchant.id) ? merchant : null;
+});
+const paddleBilling = require('./paddle').createPaddle({db, isShopifyMerchant: shopify.isShopifyMerchant});
+paddleBilling.mount(app, requireAuth);
+app.use((_req, _res, next) => { paddleBilling.refreshAll(); next(); });
+app.get('/billing/paddle', requireAuth, (req, res) => {
+  if (shopify.isShopifyMerchant(req.merchant.id)) return res.status(409).json({error:'use_shopify_billing'});
+  res.sendFile(path.join(__dirname, 'public', 'paddle.html'));
+});
+
+
+// Shopify APIs authenticate with App Bridge ID tokens, independently of cookies.
+// Released webhooks use https://getshopreply.com/shopify/webhooks. These aliases
+// still accept a relative join (/webhooks) and a doubled prefix.
+app.post('/webhooks', (req, res, next) => { req.url = '/webhooks'; shopify.router(req, res, next); });
+app.use('/shopify', shopify.router);
+app.use('/api/chat', shopify.storefrontCors);
 
 // ---- Signed session cookie helpers ----------------------------------------
 
@@ -123,7 +170,7 @@ const cookieSignature = require('cookie-signature');
 function makeSessionCookie(merchantId) {
   // cookie-signature expects a string payload and a secret.
   // The output is `payload.signature`, where signature is base64(HMAC-SHA256(payload)).
-  const payload = `m:${merchantId}.${randomToken(12)}`;
+  const payload = `m:${merchantId}.${Date.now() + 30 * 24 * 60 * 60 * 1000}.${randomToken(12)}`;
   return cookieSignature.sign(payload, SESSION_SECRET);
 }
 
@@ -133,7 +180,9 @@ function readSession(req) {
   // cookie-parser puts the unsigned value on req.signedCookies when verification passes.
   if (typeof raw !== 'string') return null;
   if (!raw.startsWith('m:')) return null;
-  const merchantId = Number(raw.slice(2).split('.')[0]);
+  const parts = raw.slice(2).split('.');
+  if (parts.length !== 4 || !Number.isFinite(Number(parts[1])) || Number(parts[1]) <= Date.now()) return null;
+  const merchantId = Number(parts[0]);
   if (!Number.isInteger(merchantId)) return null;
   return merchantId;
 }
@@ -155,11 +204,18 @@ function requireAuth(req, res, next) {
 // Key: <merchantId>|<sessionKey>  →  minute and hour buckets.
 const chatMinuteBuckets = new Map(); // key → { count, resetAt }
 const chatHourBuckets = new Map();
+const rateCleanup = setInterval(() => {
+  for (const map of [chatMinuteBuckets, chatHourBuckets]) {
+    for (const [key, entry] of map) if (entry.resetAt <= Date.now()) map.delete(key);
+  }
+}, 60000);
+rateCleanup.unref();
 
 function consumeToken(map, key, windowMs, max) {
   const now = Date.now();
   const entry = map.get(key);
   if (!entry || entry.resetAt <= now) {
+    if (map.size >= 10000 && !map.has(key)) return {ok:false, remaining:0, resetInMs:windowMs};
     map.set(key, { count: 1, resetAt: now + windowMs });
     return { ok: true, remaining: max - 1, resetInMs: windowMs };
   }
@@ -173,9 +229,11 @@ function consumeToken(map, key, windowMs, max) {
 // Visitor chat is rate-limited per (merchant, session, ip) to deter scripted
 // abuse before monthly caps even matter.
 function chatRateLimit(req, res, next) {
-  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-  const merchantId = req._rateMerchantId || 0;
-  const sessionKey = req.body?.session_key || 'anon';
+  const ip = req.ip;
+  const merchant = lookupMerchantByApiKey(String(req.headers['x-api-key'] || req.body?.api_key || '').trim());
+  if (!merchant) return res.status(401).json({error:'Invalid API key'});
+  const merchantId = merchant.id;
+  const sessionKey = String(req.body?.session_key || 'anon').slice(0, 64);
   // Per session per minute: 30 messages (visitor burst).
   const m1 = consumeToken(chatMinuteBuckets, `${merchantId}|${sessionKey}`, 60_000, 30);
   if (!m1.ok) return res.status(429).json({ error: 'Too many messages, please slow down.', retry_in_ms: m1.resetInMs });
@@ -185,10 +243,17 @@ function chatRateLimit(req, res, next) {
   next();
 }
 
+app.get('/healthz', (_req, res) => {
+  try { db.prepare('SELECT 1').get(); res.json({ok:true}); }
+  catch { res.status(503).json({ok:false}); }
+});
+
 // ---- Static files ----------------------------------------------------------
 
 app.use('/admin', express.static(path.join(__dirname, 'public', 'admin')));
 app.use('/static', express.static(path.join(__dirname, 'public', 'static')));
+app.get('/privacy', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'legal', 'privacy.html')));
+app.get('/terms', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'legal', 'terms.html')));
 
 // Public widget loader (the one snippet merchants paste)
 app.get('/embed.js', (_req, res) => {
@@ -221,6 +286,7 @@ app.post('/api/auth/signup', async (req, res) => {
 
   res.cookie('session', makeSessionCookie(info.lastInsertRowid), {
     httpOnly: true,
+    secure: PUBLIC_BASE_URL.startsWith('https://'),
     sameSite: 'lax',
     signed: true,
     maxAge: 1000 * 60 * 60 * 24 * 30,
@@ -238,6 +304,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   res.cookie('session', makeSessionCookie(row.id), {
     httpOnly: true,
+    secure: PUBLIC_BASE_URL.startsWith('https://'),
     sameSite: 'lax',
     signed: true,
     maxAge: 1000 * 60 * 60 * 24 * 30,
@@ -339,6 +406,7 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
   const apiKey = String(req.headers['x-api-key'] || req.body?.api_key || '').trim();
   const merchant = lookupMerchantByApiKey(apiKey);
   if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+  const privacyEpoch = shopify.privacyEpoch(merchant.id);
 
   const message = String(req.body?.message ?? '').trim();
   const email = req.body?.email ? String(req.body.email).trim().toLowerCase() : null;
@@ -353,11 +421,16 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
   // widget to surface an upgrade prompt instead of looping forever.
   const consume = tryConsumeConvo(merchant.id);
   if (!consume.ok) {
+    if (email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      db.prepare('INSERT INTO escalations (merchant_id, email, question) VALUES (?, ?, ?)').run(merchant.id,email,message);
+      shopify.rememberVisitor(merchant.id, sessionKey, email);
+      return res.json({reply:'Your question has been saved for the store team to review.',escalated:true,session_key:sessionKey});
+    }
     return res.status(402).json({
       error: 'monthly_cap_reached',
       used: consume.used,
       cap: consume.cap,
-      upgrade_url: `${PUBLIC_BASE_URL}/pricing`,
+      ...(shopify.isShopifyMerchant(merchant.id) ? {} : {upgrade_url: process.env.CSB_FREE_ONLY === '1' ? null : `${PUBLIC_BASE_URL}/pricing`}),
     });
   }
 
@@ -370,9 +443,9 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
     .prepare(
       `SELECT role, content FROM conversations
         WHERE merchant_id = ? AND session_key = ?
-        ORDER BY id ASC`
+        ORDER BY id DESC LIMIT 11`
     )
-    .all(merchant.id, sessionKey);
+    .all(merchant.id, sessionKey).reverse().slice(0, -1);
 
   const faqs = loadFaqs(merchant.id);
   let result;
@@ -385,6 +458,12 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
       process.stderr.write(`[chat] LLM exception: ${err?.message || err}\n`);
     }
     return res.status(502).json({ error: 'Our assistant is having trouble right now. Please try again in a moment.' });
+  }
+  // An uninstall/redaction may have arrived while the AI provider was replying.
+  if (!db.prepare('SELECT 1 FROM merchants WHERE id=?').get(merchant.id)) return res.status(401).json({ error: 'Store disconnected' });
+  if (shopify.privacyEpoch(merchant.id) !== privacyEpoch) {
+    refundConvo(merchant.id);
+    return res.status(409).json({ error: 'Conversation was cleared. Please start a new question.' });
   }
   // If we got back but the LLM returned ok:false (network/parse error), still refund.
   if (!result.ok && !result.escalate) {
@@ -399,6 +478,7 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
   }
 
   if (result.escalate) {
+    refundConvo(merchant.id);
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       return res.json({
         reply:
@@ -412,6 +492,7 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
     db.prepare(
       `INSERT INTO escalations (merchant_id, email, question) VALUES (?, ?, ?)`
     ).run(merchant.id, email, message);
+    shopify.rememberVisitor(merchant.id, sessionKey, email);
 
     db.prepare(
       `INSERT INTO conversations (merchant_id, session_key, role, content) VALUES (?, ?, 'assistant', ?)`
@@ -436,6 +517,21 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
   res.status(502).json({ error: 'Our assistant is having trouble right now. Please try again in a moment.' });
 });
 
+// Human handoff must remain available without an AI reply allowance.
+app.post('/api/chat/handoff', chatRateLimit, (req, res) => {
+  const merchant = lookupMerchantByApiKey(String(req.headers['x-api-key'] || '').trim());
+  if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const question = String(req.body?.message || '').trim();
+  const sessionKey = String(req.body?.session_key || '').slice(0, 64);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254 || !question || question.length > 2000 || !sessionKey) {
+    return res.status(400).json({ error: 'A question, session and valid email are required' });
+  }
+  db.prepare('INSERT INTO escalations (merchant_id, email, question) VALUES (?, ?, ?)').run(merchant.id, email, question);
+  shopify.rememberVisitor(merchant.id, sessionKey, email);
+  res.json({ reply: 'Thanks! Your question has been saved for the store’s support team.', escalated: true });
+});
+
 // ---- Admin: lifetime slot visibility ---------------------------------------
 // Owners see how many Lifetime slots are left across the 3 tiers. Public-read
 // counts (no PII) so the landing page could surface "X of 200 Lifetime spots
@@ -456,6 +552,8 @@ app.get('/api/admin/usage', requireAuth, (req, res) => {
     daysLeft = Math.max(0, Math.ceil((end - now) / (24 * 60 * 60 * 1000)));
   }
   res.json({
+    billing_enabled: process.env.CSB_FREE_ONLY !== '1',
+    billing_provider: paddleBilling.enabled ? 'paddle' : null,
     tier: m?.tier || 'free',
     used: m?.used || 0,
     cap: tierMonthlyCap(m?.tier || 'free'),
@@ -482,13 +580,22 @@ app.get('/api/demo/key', (_req, res) => {
 // ---- Demo page so merchants can preview the widget ------------------------
 
 app.get('/', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'demo.html'));
+  // app dev can open the tunnel root even when production uses /shopify.
+  if (typeof _req.query.shop === 'string' && /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(_req.query.shop)) {
+    const params = new URLSearchParams();
+    for (const key of ['shop', 'host', 'embedded']) if (typeof _req.query[key] === 'string') params.set(key, _req.query[key]);
+    res.set('Content-Security-Policy', shopify.frameAncestors(_req.query.shop));
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    return res.redirect(`/shopify?${params}`);
+  }
+  res.sendFile(path.join(__dirname, 'public', 'home.html'));
 });
 
 // ---- Public landing / pricing page ----------------------------------------
 // Static HTML that fetches /api/pricing and /api/lifetime-availability at
 // load time so the Lifetime "X of Y left" pills stay honest.
 app.get('/pricing', (_req, res) => {
+  // Public planned prices remain visible while paid checkout is disabled.
   res.sendFile(path.join(__dirname, 'public', 'pricing.html'));
 });
 
@@ -502,7 +609,7 @@ app.get('/signup', (_req, res) => {
 // ---- Public pricing endpoint (no auth) -----------------------------------
 // Landing pages and sales replies link to /pricing for a single source of truth.
 app.get('/api/pricing', (_req, res) => {
-  res.json({ tiers: PRICING, currency: 'CNY/USD', as_of: '2026-09-23' });
+  res.json({ tiers: process.env.CSB_FREE_ONLY === '1' ? {free:PRICING.free} : (paddleBilling.enabled ? {free:PRICING.free,pro_monthly:PRICING.pro_monthly,pro_annual:PRICING.pro_annual} : PRICING), currency: 'CNY/USD', as_of: '2026-09-23' });
 });
 
 // ---- Public lifetime availability (no auth) -------------------------------
@@ -565,16 +672,20 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || null;
 // from monthly → annual; doesn't overwrite a higher Lifetime tier).
 // Returns { ok, tier, lifetime_remaining }.
 function applyUpgrade(merchantId, priceKey) {
+  if (shopify.isShopifyMerchant(merchantId)) return { ok: false, error: 'use_shopify_billing' };
   const entry = PRICE_CATALOG[priceKey];
   if (!entry) return { ok: false, error: 'unknown_price_key' };
 
-  const currentTier = db.prepare('SELECT tier FROM merchants WHERE id = ?').get(merchantId)?.tier || 'free';
+  const current = db.prepare('SELECT tier FROM merchants WHERE id = ?').get(merchantId);
+  if (!current) return { ok: false, error: 'merchant_not_found' };
+  const currentTier = current.tier;
   const currentRank = TIER_RANK[currentTier] ?? 0;
   const newRank = TIER_RANK[entry.tier] ?? 0;
 
   // If the merchant is already at this tier or higher, no-op. Returning ok
   // keeps webhook idempotent (Stripe sends the same event on retries).
   if (currentRank >= newRank) {
+    db.prepare('UPDATE merchants SET trial_ends_at = NULL WHERE id = ?').run(merchantId);
     return { ok: true, tier: currentTier, lifetime_remaining: null, no_op: true };
   }
 
@@ -593,6 +704,7 @@ function applyUpgrade(merchantId, priceKey) {
   db.prepare(
       `UPDATE merchants
           SET tier = ?,
+              trial_ends_at = NULL,
               monthly_convo_count = 0,
               convo_count_reset_at = date('now')
         WHERE id = ?`
@@ -603,6 +715,7 @@ function applyUpgrade(merchantId, priceKey) {
 
 // 1) Real Stripe Checkout (only when keys are configured).
 app.post('/api/billing/checkout', requireAuth, async (req, res) => {
+  if (shopify.isShopifyMerchant(req.merchant.id)) return res.status(409).json({ error: 'use_shopify_billing' });
   if (!STRIPE_SECRET_KEY) {
     return res.status(503).json({ error: 'stripe_not_configured' });
   }
@@ -616,6 +729,8 @@ app.post('/api/billing/checkout', requireAuth, async (req, res) => {
     form.set('line_items[0][price]', stripePriceId);
     form.set('line_items[0][quantity]', '1');
     form.set('client_reference_id', String(req.merchant.id));
+    form.set('metadata[price_key]', priceKey);
+    form.set('metadata[merchant_id]', String(req.merchant.id));
     form.set('customer_email', req.merchant.email);
     form.set('success_url', `${PUBLIC_BASE_URL}/admin?billing=success&tier=${PRICE_CATALOG[priceKey].tier}`);
     form.set('cancel_url', `${PUBLIC_BASE_URL}/admin?billing=cancelled`);
@@ -653,10 +768,22 @@ app.post('/api/billing/upgrade-mock', requireAuth, (req, res) => {
 
 // 3) Stripe webhook receiver. Only registered when STRIPE_WEBHOOK_SECRET is
 // set so dev servers without it don't reject real requests by accident.
+//
+// Idempotency: every event id is recorded in `webhook_events`; if we see the
+// same id twice (Stripe always retries on 5xx, sometimes retries on 4xx, and
+// also sends duplicates during dev replays), we no-op the second delivery.
+// This is the only safe way to apply upgrades from webhooks — otherwise a
+// Stripe outage could double-charge a Lifetime slot.
+//
+// Events we care about:
+//   - checkout.session.completed         -> apply upgrade once
+//   - customer.subscription.created      -> link subscription to merchant
+//   - customer.subscription.updated      -> track subscription_status
+//   - customer.subscription.deleted      -> downgrade to free
+//   - invoice.payment_succeeded          -> reset monthly counter on renew
+//   - invoice.payment_failed             -> note grace-period state
 if (STRIPE_WEBHOOK_SECRET) {
   app.post('/api/billing/webhook', async (req, res) => {
-    // We need the raw body for signature verification; express.json is fine
-    // here because we read req.body as a Buffer via the raw parser.
     const sig = req.headers['stripe-signature'];
     let event;
     try {
@@ -668,26 +795,131 @@ if (STRIPE_WEBHOOK_SECRET) {
       console.error('[billing webhook] signature verification failed:', err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      const merchantId = Number(session.client_reference_id);
-      const priceKey = Object.entries(PRICE_CATALOG).find(
-        ([, e]) => e.stripe_price_env && process.env[e.stripe_price_env] === session.line_items?.[0]?.price?.id
-      )?.[0];
-      if (merchantId && priceKey) {
-        applyUpgrade(merchantId, priceKey);
-      } else {
-        console.error('[billing webhook] could not resolve merchant/price from session:', session.id);
-      }
-    } else if (event.type === 'customer.subscription.deleted') {
-      // Subscription cancelled — downgrade merchant to free at period end.
-      const sub = event.data.object;
-      const merchantId = Number(sub.metadata?.merchant_id);
-      if (merchantId) {
-        db.prepare(`UPDATE merchants SET tier = 'free', monthly_convo_count = 0, convo_count_reset_at = date('now') WHERE id = ?`).run(merchantId);
-      }
+
+    // A valid standalone-provider event must never alter Shopify entitlements.
+    const object = event.data?.object || {};
+    const refs = [Number(object.client_reference_id), Number(object.metadata?.merchant_id)];
+    const id = typeof object.id === 'string' ? object.id : '';
+    const subscription = typeof object.subscription === 'string' ? object.subscription : '';
+    const customer = typeof object.customer === 'string' ? object.customer : '';
+    refs.push(...db.prepare(`SELECT id FROM merchants WHERE stripe_subscription_id IN (?, ?)
+      OR (stripe_customer_id = ? AND stripe_customer_id <> '')`).all(id, subscription, customer).map(row => row.id));
+    if (refs.some(id => Number.isSafeInteger(id) && id > 0 && shopify.isShopifyMerchant(id))) {
+      recordWebhookEvent(event.id, event.type);
+      return res.json({received:true, ignored:true});
     }
-    res.json({ received: true });
+
+    // ---- Idempotency gate -----------------------------------------------
+    if (isWebhookEventProcessed(event.id)) {
+      console.log(`[billing webhook] duplicate event ${event.id} (${event.type}), skipping`);
+      return res.json({ received: true, duplicate: true });
+    }
+
+    const log = (...args) => console.log('[billing webhook]', event.id, event.type, ...args);
+
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      // ---- 1) Initial upgrade from Checkout -------------------------------
+      if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
+        const session = event.data.object;
+        const merchantId = Number(session.client_reference_id);
+        if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+          recordWebhookEvent(event.id, event.type);
+          db.exec('COMMIT');
+          return res.json({ received: true, pending: true });
+        }
+        const priceKey = session.metadata?.price_key;
+        if (!PRICE_CATALOG[priceKey] || String(merchantId) !== session.metadata?.merchant_id) {
+          throw new Error('Checkout metadata cannot resolve merchant and price');
+        }
+        if (merchantId && priceKey) {
+          const result = applyUpgrade(merchantId, priceKey);
+          if (!result.ok) throw new Error(result.error);
+          // Link the Stripe customer / subscription ids so future renewals /
+          // cancellations route back to this merchant without client_reference_id.
+          if (session.customer && session.subscription) {
+            db.prepare(
+              'UPDATE merchants SET stripe_customer_id = ?, stripe_subscription_id = ?, subscription_status = ? WHERE id = ?'
+            ).run(String(session.customer), String(session.subscription), 'active', merchantId);
+          }
+          log(`upgrade ${merchantId} -> ${priceKey}`, result);
+        } else {
+          throw new Error('Checkout merchant missing');
+        }
+
+      // ---- 2) Subscription lifecycle -------------------------------------
+      } else if (
+        event.type === 'customer.subscription.created' ||
+        event.type === 'customer.subscription.updated' ||
+        event.type === 'customer.subscription.deleted'
+      ) {
+        const sub = event.data.object;
+        const subId = String(sub.id);
+        const merchant = db.prepare(
+          'SELECT id FROM merchants WHERE stripe_subscription_id = ? OR stripe_customer_id = ? LIMIT 1'
+        ).get(subId, String(sub.customer));
+
+        if (merchant) {
+          if (event.type === 'customer.subscription.deleted' || sub.status === 'canceled') {
+            db.prepare(
+              `UPDATE merchants
+                  SET tier = 'free',
+                      monthly_convo_count = 0,
+                      convo_count_reset_at = date('now'),
+                      subscription_status = 'canceled'
+                WHERE id = ?`
+            ).run(merchant.id);
+            log(`canceled subscription, downgraded merchant ${merchant.id}`);
+          } else {
+            db.prepare(
+              'UPDATE merchants SET subscription_status = ?, stripe_subscription_id = ? WHERE id = ?'
+            ).run(sub.status, subId, merchant.id);
+            log(`subscription ${event.type} -> ${sub.status} for merchant ${merchant.id}`);
+          }
+        } else {
+          log(`no merchant linked to subscription ${subId} (customer=${sub.customer})`);
+        }
+
+      // ---- 3) Recurring payment success / failure ------------------------
+      } else if (event.type === 'invoice.payment_succeeded') {
+        const inv = event.data.object;
+        const subId = inv.subscription ? String(inv.subscription) : null;
+        if (subId) {
+          // On a successful renewal we reset the monthly counter so the
+          // subscription stays usable even if they hit the cap mid-cycle.
+          const result = db.prepare(
+            `UPDATE merchants
+                SET subscription_status = 'active',
+                    monthly_convo_count = 0,
+                    convo_count_reset_at = date('now')
+              WHERE stripe_subscription_id = ?`
+          ).run(subId);
+          log(`payment_succeeded sub=${subId} rows=${result.changes}`);
+        }
+      } else if (event.type === 'invoice.payment_failed') {
+        const inv = event.data.object;
+        const subId = inv.subscription ? String(inv.subscription) : null;
+        if (subId) {
+          db.prepare(
+            'UPDATE merchants SET subscription_status = ? WHERE stripe_subscription_id = ?'
+          ).run('past_due', subId);
+          log(`payment_failed sub=${subId} marked past_due`);
+        }
+      } else {
+        log('ignored (unhandled event type)');
+      }
+
+      // Only commit the event id AFTER successful processing. If we crashed
+      // mid-handler, Stripe will retry and we'll re-process from scratch.
+      recordWebhookEvent(event.id, event.type);
+      db.exec('COMMIT');
+      res.json({ received: true });
+    } catch (err) {
+      if (db.isTransaction) db.exec('ROLLBACK');
+      console.error('[billing webhook] handler error:', err.message);
+      // Return 500 so Stripe retries (and we won't have recorded the event id).
+      res.status(500).send('Webhook handler error');
+    }
   });
 }
 
@@ -695,12 +927,15 @@ if (STRIPE_WEBHOOK_SECRET) {
 // One trial per merchant. Refuses if they've already used it, or if they're
 // already on a paid tier (no "double dipping" free trial after upgrading).
 app.post('/api/billing/start-trial', requireAuth, (req, res) => {
+  if (shopify.isShopifyMerchant(req.merchant.id)) return res.status(409).json({ error: 'use_shopify_billing' });
   const result = startProTrial(req.merchant.id);
   if (!result.ok) return res.status(409).json(result);
   res.json(result);
 });
 
 if (require.main === module) {
+  shopify.purgeExpired();
+  setInterval(() => shopify.purgeExpired(), 60 * 60 * 1000).unref();
   // Expire any trials whose 7 days have already passed (e.g. server was off
   // when they expired). Cheap (single UPDATE).
   const expired = expireTrials();
@@ -712,9 +947,18 @@ if (require.main === module) {
     if (n > 0) console.log(`[trial] expired ${n} trial(s)`);
   }, 60 * 60 * 1000);
 
-  app.listen(PORT, () => {
+  // CLI HOST can be a public HTTPS URL; it is not a local listening interface.
+  const bindHost = process.env.BIND_HOST || (process.env.HOST && !process.env.HOST.includes('://') ? process.env.HOST : '127.0.0.1');
+  app.listen(PORT, bindHost, () => {
+    const llmBase = process.env.LLM_BASE_URL || 'https://api.openai.com/v1';
+    const llmModel = process.env.LLM_MODEL || 'gpt-4o-mini';
+    const shopifyReady = Boolean(process.env.SHOPIFY_API_KEY && process.env.SHOPIFY_API_SECRET
+      && /^[a-f\d]{64}$/i.test(process.env.SHOPIFY_TOKEN_ENCRYPTION_KEY || '')
+      && /^https:\/\//.test(PUBLIC_BASE_URL));
+    console.log(`[boot] public_base=${PUBLIC_BASE_URL} llm_base=${llmBase} llm_model=${llmModel} shopify_configured=${shopifyReady}`);
     console.log(`AI customer-service bot listening on ${PUBLIC_BASE_URL}`);
   });
 }
 
 module.exports = app;
+app.get('/refunds', (_req,res)=>res.sendFile(path.join(__dirname,'public','refunds.html')));

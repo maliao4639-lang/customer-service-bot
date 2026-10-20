@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GetShopReply – Answer shipping and returns questions while you sleep</title>
+<meta name="description" content="GetShopReply answers store shipping, return and FAQ questions from your policies, and saves unanswered questions for follow-up.">
+<link rel="canonical" href="https://getshopreply.com/">
+<meta property="og:site_name" content="GetShopReply">
+<meta property="og:title" content="GetShopReply – Answer shipping and returns questions while you sleep">
+<meta property="og:description" content="AI customer support from your store policies and FAQs. Start with 100 AI replies per month free.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://getshopreply.com/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f2f5f7;--surface:#fff;--ink:#12222e;--muted:#54677a;--line:#d5dee6;--brand:#0f7b6c;--brand-ink:#fff;--hi:#ffe27a;--hi-ink:#3b2f00;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1a23;--surface:#16262f;--ink:#e8eff4;--muted:#9bb0c0;--line:#28404e;--brand:#3fc2ac;--brand-ink:#04211c;--hi:#ffe27a;--hi-ink:#3b2f00}}
+:root[data-theme="dark"]{--bg:#0e1a23;--surface:#16262f;--ink:#e8eff4;--muted:#9bb0c0;--line:#28404e;--brand:#3fc2ac;--brand-ink:#04211c;--hi:#ffe27a;--hi-ink:#3b2f00}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 17px/1.6 Inter,system-ui,-apple-system,Segoe UI,sans-serif}
+h1,h2,h3{font-family:"Bricolage Grotesque",Inter,system-ui,sans-serif;line-height:1.1;margin:0;letter-spacing:-.02em}
+a{color:inherit}
+.wrap{max-width:1040px;margin:0 auto;padding:0 22px}
+nav{display:flex;justify-content:space-between;align-items:center;padding:20px 0}
+nav b{font-family:"Bricolage Grotesque",sans-serif;font-size:20px}
+nav a{font-size:15px;color:var(--muted);text-decoration:none;margin-left:20px}
+.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center;padding:40px 0 72px}
+.hero h1{font-size:clamp(38px,6vw,64px);font-weight:700}
+.hero p{color:var(--muted);max-width:30em;margin:20px 0 28px}
+.btn{display:inline-block;background:var(--brand);color:var(--brand-ink);font-weight:500;padding:14px 24px;border-radius:10px;text-decoration:none}
+.btn:focus-visible,a:focus-visible{outline:3px solid var(--hi);outline-offset:3px}
+.note{display:block;font-size:14px;color:var(--muted);margin-top:12px}
+.chat{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:18px;font-size:15px}
+.chat .top{font-size:13px;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:14px}
+.m{max-width:85%;padding:10px 14px;margin:0 0 10px;border-radius:14px}
+.q{background:var(--hi);color:var(--hi-ink);margin-left:auto;border-bottom-right-radius:4px}
+.a{background:var(--bg);border-bottom-left-radius:4px}
+.saved{font-size:13px;color:var(--muted);border-left:3px solid var(--brand);padding-left:10px;margin-top:4px}
+section{padding:64px 0;border-top:1px solid var(--line)}
+section h2{font-size:clamp(28px,4vw,40px);margin-bottom:28px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;counter-reset:s}
+.steps div{counter-increment:s}
+.steps div::before{content:counter(s);display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:var(--brand);color:var(--brand-ink);font-weight:500;margin-bottom:12px}
+.steps h3{font-size:21px;margin-bottom:6px}.steps p{margin:0;color:var(--muted)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.two h3{font-size:22px;margin-bottom:12px}
+.two ul{margin:0;padding-left:20px;color:var(--muted)}.two li{margin-bottom:8px}
+.price{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.plan{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px}
+.plan.pro{border:2px solid var(--brand)}
+.plan h3{font-size:22px}.plan .n{font-family:"Bricolage Grotesque",sans-serif;font-size:40px;font-weight:700;margin:8px 0}
+.plan p{margin:0 0 6px;color:var(--muted)}
+details{border-bottom:1px solid var(--line);padding:16px 0}
+summary{cursor:pointer;font-weight:500}details p{color:var(--muted);margin:10px 0 0}
+.cta{text-align:center}.cta h2{margin-bottom:20px}
+footer{padding:32px 0 48px;font-size:14px;color:var(--muted);border-top:1px solid var(--line)}
+footer a{margin-right:16px}
+@media(max-width:760px){.hero,.two,.price,.steps{grid-template-columns:1fr}.hero{gap:32px;padding-bottom:48px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav><b>GetShopReply</b><span><a href="#pricing">Pricing</a><a href="/admin">Log in</a></span></nav>
+
+<header class="hero">
+<div>
+<h1>Stop answering “how long is shipping?” all day.</h1>
+<p>A chat widget for your store that answers from your own shipping policy, return policy and FAQs. Anything it can’t answer is saved for you, with the visitor’s email.</p>
+<a class="btn" href="/signup">Create a free account</a>
+<span class="note">100 AI replies a month free. No credit card.</span>
+</div>
+<div class="chat" role="img" aria-label="Example chat: a visitor asks about returns and gets an answer from the store policy; a question outside the policy is saved for the owner.">
+<div class="top">Example store chat</div>
+<div class="m q">Can I return something I’ve already worn?</div>
+<div class="m a">Items can be returned within 30 days if unworn and unwashed. Worn items can’t be accepted. Want the return steps?</div>
+<div class="m q">Can you make this in a custom size?</div>
+<div class="m a">I don’t have that information. Leave your email and the store owner will reply.</div>
+<div class="saved">Saved to your dashboard for follow-up</div>
+</div>
+</header>
+
+<section>
+<h2>Live on your store in three steps</h2>
+<div class="steps">
+<div><h3>Add your store</h3><p>Paste in your policies and frequently asked questions.</p></div>
+<div><h3>Add the chat widget</h3><p>Copy the embed code into your storefront theme.</p></div>
+<div><h3>Follow up</h3><p>Review unanswered questions and visitor emails in your dashboard.</p></div>
+</div>
+</section>
+
+<section>
+<h2>Built for small stores that answer every message themselves</h2>
+<div class="two">
+<div><h3>A good fit if</h3><ul>
+<li>You run the store alone or with one or two people</li>
+<li>Your shipping and returns policies are already written</li>
+<li>Most messages ask the same handful of questions</li>
+<li>Visitors write in while you’re asleep or offline</li></ul></div>
+<div><h3>Probably not if</h3><ul>
+<li>You need customers to check live order status in chat</li>
+<li>You need a full ticketing system for a support team</li>
+<li>You want replies to go out by email automatically</li></ul></div>
+</div>
+</section>
+
+<section>
+<h2>Adding it to a Shopify store</h2>
+<div class="steps">
+<div><h3>Copy your embed code</h3><p>Log in to your GetShopReply dashboard and copy the code for your store.</p></div>
+<div><h3>Open your theme code</h3><p>In Shopify admin go to Online Store, Themes, then the ⋯ menu, then Edit code. Open <code>layout/theme.liquid</code>.</p></div>
+<div><h3>Paste and save</h3><p>Keep the supplied <code>defer</code> attribute. Paste the code just above the closing <code>&lt;/body&gt;</code> tag and click Save. Open your storefront, then click the chat button to open the widget.</p></div>
+</div>
+<span class="note">Duplicate your theme before editing and preview the change. If your store uses a custom Content Security Policy, allow GetShopReply scripts, styles and connections. If you switch themes later, paste the code into the new theme too. Not comfortable editing code? Email us and we’ll walk you through it.</span>
+</section>
+
+<section>
+<h2>What it does, and what it doesn’t</h2>
+<div class="two">
+<div><h3>It handles</h3><ul>
+<li>Shipping times, costs and countries</li>
+<li>Return and refund policy questions</li>
+<li>Anything your FAQs already answer</li>
+<li>Capturing emails when it can’t answer</li></ul></div>
+<div><h3>It doesn’t</h3><ul>
+<li>Look up or change orders</li>
+<li>Issue refunds in your store</li>
+<li>Send email for you (you reply yourself)</li>
+<li>Guarantee every answer. AI can make mistakes, so review your store info regularly.</li></ul></div>
+</div>
+</section>
+
+<section id="pricing">
+<h2>Start free. Upgrade when you need more replies.</h2>
+<div class="price">
+<div class="plan"><h3>Free</h3><div class="n">$0</div><p>100 AI replies per store each month</p><p>Widget, dashboard, email capture</p></div>
+<div class="plan pro"><h3>Pro</h3><div class="n">$21<span style="font-size:17px;font-weight:400"> / month</span></div><p>500 AI replies per store each month</p><p>Or $205 / year</p><p>Same features as Free</p></div>
+</div>
+<span class="note">Usage counts AI replies, not conversations. Allowances reset on the first day of each UTC month. When it runs out, visitors can still leave a question and email.</span>
+</section>
+
+<section>
+<h2>Common questions</h2>
+<details><summary>What happens when it doesn’t know the answer?</summary><p>It says so and asks for the visitor’s email. The question appears in your dashboard for you to follow up.</p></details>
+<details><summary>Can it tell customers where their order is?</summary><p>No. It doesn’t connect to order systems, so it answers policy and FAQ questions only. For “where’s my order?”, add your shipping times and tracking instructions to your FAQs, and it will point customers to them.</p></details>
+<details><summary>Will it make up answers?</summary><p>It answers from the information you enter. AI can still make mistakes, so review your store info regularly and check the questions it couldn’t answer in your dashboard.</p></details>
+<details><summary>Does it work outside Shopify?</summary><p>The widget is an embed code, so it can go on any storefront where you can edit the site code.</p></details>
+<details><summary>What happens when I use all my replies?</summary><p>Visitors can still leave their question and email for you to follow up. Your allowance resets on the first day of each UTC month.</p></details>
+<details><summary>Can I cancel or get a refund?</summary><p>Cancelling stops future renewals, and you normally keep access until the paid period ends. See the <a href="/refunds">refund policy</a> for details.</p></details>
+<details><summary>Do I need to be technical to install it?</summary><p>You paste one embed code into your storefront theme. Ask us if you get stuck at <a href="mailto:support@getshopreply.com">support@getshopreply.com</a>.</p></details>
+</section>
+
+<section class="cta">
+<h2>Try it on your store today.</h2>
+<a class="btn" href="/signup">Create a free account</a>
+</section>
+
+<footer>
+<a href="/pricing">Pricing</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refunds">Refunds</a>
+<p>Support: <a href="mailto:support@getshopreply.com">support@getshopreply.com</a></p>
+</footer>
+</div>
+</body>
+</html>

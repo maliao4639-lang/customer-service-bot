@@ -1,5 +1,8 @@
 #csb-root { all: initial; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 
+/* Component display rules must preserve the hidden state of the panel and email form. */
+#csb-root [hidden] { display: none !important; }
+
 /* Floating bubble button */
 #csb-bubble {
   position: fixed;
@@ -201,3 +204,19 @@
   #csb-bubble { right: 10px; bottom: 10px; }
   #csb-bubble-label { display: none; }
 }
+
+#csb-order-open { margin: 10px 14px 0; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; color: #1d4ed8; background: #eff6ff; font-size: 14px; cursor: pointer; }
+#csb-order-view { min-height: 0; overflow-y: auto; padding: 14px 16px; color: #0f172a; background: #f8fafc; font-size: 14px; line-height: 1.5; }
+#csb-order-view * { box-sizing: border-box; }
+#csb-order-view h3 { margin: 12px 0 6px; font-size: 19px; }
+#csb-order-view h4 { font-size: 18px; margin: 8px 0; }
+#csb-order-view label { display: block; margin-top: 12px; font-weight: 600; }
+#csb-order-view input { width: 100%; min-width: 0; margin-top: 4px; padding: 10px; border: 1px solid #94a3b8; border-radius: 8px; color: #0f172a; background: white; font: inherit; font-size: 16px; }
+#csb-order-view button { max-width: 100%; margin-top: 10px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: white; color: #1e40af; font: inherit; cursor: pointer; }
+#csb-order-view button[type=submit] { background: #2563eb; color: white; border-color: #2563eb; }
+#csb-order-view button:disabled { opacity: .6; cursor: wait; }
+#csb-order-view :focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+#csb-order-view a { color: #1d4ed8; text-decoration: underline; }
+#csb-order-view p, #csb-order-result { overflow-wrap: anywhere; }
+#csb-order-result section { border-top: 1px solid #cbd5e1; padding: 12px 0; }
+#csb-order-view .csb-order-note { font-size: 12px; color: #475569; }

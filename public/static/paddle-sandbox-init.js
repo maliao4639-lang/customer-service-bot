@@ -1,0 +1,2 @@
+'use strict';
+try { Paddle.Environment.set('sandbox'); Paddle.Initialize({token:"test_b58e8a7677dbb6c4c3f5b76bb9b",eventCallback:function(e){if(e.name==='checkout.completed')document.getElementById('status').textContent='沙盒付款已提交，套餐状态仍需服务器验证。';}}); if(!new URLSearchParams(location.search).has('_ptxn'))document.getElementById('status').textContent='测试付款页已就绪，请通过测试订单链接打开。'; } catch(e) {document.getElementById('status').textContent='付款组件加载失败，请刷新重试。';}

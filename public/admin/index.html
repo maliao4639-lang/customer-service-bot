@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Customer Service Bot – Merchant Console</title>
+    <title>GetShopReply – Merchant Console</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/static/admin.css" />
   </head>
@@ -10,7 +10,7 @@
     <!-- Login / signup view -->
     <div id="auth-view" class="wrap">
       <div class="card auth">
-        <h1>Customer Service Bot</h1>
+        <h1>GetShopReply</h1>
         <p class="muted">Sign in to manage your store's AI assistant.</p>
         <div class="tabs">
           <button data-tab="login" class="tab active">Log in</button>
@@ -30,7 +30,7 @@
     <!-- Main console -->
     <div id="console-view" hidden>
       <header class="topbar">
-        <strong>Customer Service Bot</strong>
+        <strong>GetShopReply</strong>
         <span class="muted" id="who"></span>
         <button id="logout-btn" class="link">Log out</button>
       </header>
@@ -72,7 +72,7 @@
 
         <section class="card">
           <h2>Plan and usage</h2>
-          <p class="muted">Current tier and how many conversations you've used this month. Resets on the 1st.</p>
+          <p class="muted">Current tier and how many AI replies you've used this month. Resets on the 1st.</p>
           <div id="usage-summary" class="usage-summary">
             <div class="usage-tier">Loading...</div>
             <div class="usage-bar"><div class="usage-fill" id="usage-fill"></div></div>
@@ -80,7 +80,7 @@
           </div>
         </section>
 
-        <section class="card" id="upgrade-card">
+        <section class="card" id="upgrade-card" hidden>
           <h2>Upgrade</h2>
           <p class="muted">More conversations per month, or one-time payment. Live tier availability below.</p>
           <div id="upgrade-tiers" class="upgrade-tiers"></div>
@@ -89,9 +89,10 @@
 
         <section class="card">
           <h2>Embed snippet</h2>
-          <p class="muted">Paste this into your storefront's HTML (Shopify: <code>theme.liquid</code>; WooCommerce: header / footer PHP template).</p>
+          <p class="muted">For non-Shopify websites, paste this into your storefront HTML. Shopify merchants should install the ShopReply app and enable ShopReply chat in their theme editor’s App embeds.</p>
           <pre id="snippet" class="snippet"></pre>
           <button id="copy-snippet" class="link">Copy</button>
+          <p id="order-preview-entry" hidden><a href="/static/order-preview.html" target="_blank" rel="noopener">Test your order lookup</a></p>
         </section>
 
         <section class="card">
