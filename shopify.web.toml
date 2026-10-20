@@ -1,0 +1,6 @@
+name = "shopreply-express"
+roles = ["frontend", "backend"]
+webhooks_path = "/shopify/webhooks"
+
+[commands]
+dev = "node server.js"

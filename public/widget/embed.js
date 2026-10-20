@@ -11,6 +11,7 @@
 (function () {
   'use strict';
 
+  if (document.getElementById('csb-root')) return;
   // Resolve config from the loader <script> tag.
   var scripts = document.getElementsByTagName('script');
   var self = null;
@@ -71,6 +72,7 @@
   })();
   var visitorEmail = readStorage('csb_email') || '';
   var pendingQuestion = null;
+  var quotaReached = false;
 
   // Elements
   var bubble = document.getElementById('csb-bubble');
@@ -121,8 +123,7 @@
     el.innerHTML = [
       '<div class="csb-upgrade-eyebrow">Monthly limit reached</div>',
       '<div class="csb-upgrade-title">This store is out of instant replies for now</div>',
-      '<div class="csb-upgrade-body">The shop owner can keep the assistant running by upgrading, or you can leave your email below and the team will get back to you within a day.</div>',
-      '<div class="csb-upgrade-cta"><a href="' + (upgradeUrl || (apiBase + '/pricing')) + '" target="_blank" rel="noopener">View pricing &rarr;</a></div>',
+      '<div class="csb-upgrade-body">Leave your email below so the store’s support team can follow up.</div>',
       '<div class="csb-upgrade-foot">' + (used || '?') + ' / ' + (cap || '?') + ' used this month</div>'
     ].join('');
     messagesEl.appendChild(el);
@@ -132,7 +133,7 @@
     sendBtn.disabled = true;
     input.placeholder = 'Monthly limit reached — leave your email below.';
     // Encourage the email fallback so the lead isn't lost.
-    pendingQuestion = '__upgrade_fallback__';
+    quotaReached = true;
     setEmailRowVisible(true);
   }
 
@@ -161,6 +162,7 @@
       .then(function (r) {
         if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
         if (r.status === 402) {
+          pendingQuestion = message;
           addUpgradeCard(r.body.used, r.body.cap, r.body.upgrade_url);
           return;
         }
@@ -179,9 +181,9 @@
         addBubble('bot', 'Network error. Please try again.');
       })
       .then(function () {
-        sendBtn.disabled = false;
-        input.disabled = false;
-        input.focus();
+        sendBtn.disabled = quotaReached;
+        input.disabled = quotaReached;
+        if (!quotaReached) input.focus();
       });
   }
 
@@ -211,7 +213,8 @@
       addBubble('user', q + '  (email: ' + email + ')');
       addBubble('bot', '…');
       var placeholder = messagesEl.lastChild;
-      fetch(apiBase + '/api/chat', {
+      emailSendBtn.disabled = true;
+      fetch(apiBase + '/api/chat/handoff', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
         body: JSON.stringify({ message: q, session_key: sessionKey, email: email }),
@@ -223,13 +226,16 @@
             addUpgradeCard(r.body.used, r.body.cap, r.body.upgrade_url);
             return;
           }
-          if (!r.ok) { addBubble('bot', 'Something went wrong.'); return; }
+          if (!r.ok) { pendingQuestion = q; setEmailRowVisible(true); addBubble('bot', 'Could not save your question. Please try again.'); return; }
           addBubble('bot', r.body.reply || '');
         })
         .catch(function () {
           if (placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
-          addBubble('bot', 'Network error.');
-        });
+          pendingQuestion = q;
+          setEmailRowVisible(true);
+          addBubble('bot', 'Network error. Please try saving again.');
+        })
+        .then(function () { emailSendBtn.disabled = false; });
     }
   });
 

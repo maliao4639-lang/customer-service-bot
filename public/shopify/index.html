@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="shopify-api-key" content="__SHOPIFY_API_KEY__">
+  <title>ShopReply — AI customer support</title>
+  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+  <script src="https://cdn.shopify.com/shopifycloud/polaris-1.js"></script>
+  <script src="/static/shopify.js" defer></script>
+</head>
+<body>
+  <s-page heading="ShopReply">
+    <s-banner id="status" tone="info" aria-live="polite">Connecting to your store…</s-banner>
+    <div id="workspace" hidden>
+      <s-section heading="1. Enable your storefront assistant">
+        <s-paragraph>Open your theme editor, turn on ShopReply chat under App embeds, then save your theme.</s-paragraph>
+        <s-link id="embed-link" target="_blank">Open theme editor</s-link>
+        <s-paragraph>Preview your storefront to confirm the chat bubble appears. ShopReply only answers using the policies and FAQs you save below.</s-paragraph>
+      </s-section>
+      <s-section heading="2. Add your store’s policies and FAQs">
+        <s-text-field id="brand_name" label="Store name" max-length="120"></s-text-field>
+        <s-text-area id="shipping_info" label="Shipping policy" rows="5" max-length="16000"></s-text-area>
+        <s-text-area id="return_policy" label="Returns and refunds policy" rows="5" max-length="16000"></s-text-area>
+        <s-text-area id="extra_info" label="Additional store information" rows="3" max-length="16000"></s-text-area>
+        <div id="faq-list"></div>
+        <s-button id="add-faq">Add FAQ</s-button>
+        <s-button id="save" variant="primary">Save policies and FAQs</s-button>
+      </s-section>
+      <s-section heading="3. Try your assistant">
+        <s-paragraph>Save your changes first. Previews do not use your monthly reply allowance.</s-paragraph>
+        <s-text-field id="preview-question" label="Test question" max-length="2000"></s-text-field>
+        <s-button id="preview">Preview answer</s-button>
+        <s-paragraph id="preview-answer" aria-live="polite"></s-paragraph>
+      </s-section>
+      <s-section heading="Plan and usage">
+        <s-paragraph>Already use a standalone ShopReply account? Contact support before subscribing to avoid overlapping subscriptions. Existing policies are not imported automatically.</s-paragraph>
+        <s-paragraph id="usage"></s-paragraph>
+        <s-paragraph>Free: 100 AI replies per month. Pro: 500 AI replies per month, $21 every 30 days or $205 per year. Allowances reset on the first day of each UTC calendar month. No usage overages. Visitors can still leave a question and email when the allowance runs out.</s-paragraph>
+        <s-button id="monthly">Pro — $21 / 30 days</s-button>
+        <s-button id="annual">Pro — $205 / year</s-button>
+        <s-button id="refresh">Refresh subscription status</s-button>
+        <s-button id="cancel">Cancel Pro and switch to Free</s-button>
+        <div id="cancel-confirm" hidden>
+          <s-paragraph>Cancel your paid Shopify subscription immediately and switch to the Free allowance of 100 replies. Your used reply count stays the same. Shopify determines any prorated credit.</s-paragraph>
+          <s-button id="confirm-cancel" tone="critical">Confirm cancellation</s-button>
+          <s-button id="keep-plan">Keep current plan</s-button>
+        </div>
+      </s-section>
+      <s-section heading="Questions for your team">
+        <s-paragraph>These visitors asked your team to follow up by email. Only contact them about their support question.</s-paragraph>
+        <div id="escalations"></div>
+      </s-section>
+      <s-section heading="Customer data requests">
+        <s-paragraph>Verify the requester’s identity before delivering a data export. Complete requests within the required deadline. Exports expire after 30 days.</s-paragraph>
+        <div id="privacy-requests"></div>
+      </s-section>
+      <s-paragraph><s-link href="/privacy" target="_blank">Privacy policy</s-link> · <s-link href="/terms" target="_blank">Terms of service</s-link> · <s-link href="mailto:maliao4639@gmail.com">Contact support</s-link></s-paragraph>
+    </div>
+  </s-page>
+</body>
+</html>

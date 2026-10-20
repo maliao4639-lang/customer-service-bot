@@ -4,7 +4,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
 
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.CSB_DATA_DIR || path.join(__dirname, 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const dbPath = path.join(DATA_DIR, 'app.db');
@@ -112,7 +112,7 @@ function ensureMonthReset(merchantId) {
       .run(row.today, merchantId);
     return;
   }
-  if (row.today > row.convo_count_reset_at) {
+  if (row.today.slice(0, 7) > row.convo_count_reset_at.slice(0, 7)) {
     db.prepare('UPDATE merchants SET monthly_convo_count = 0, convo_count_reset_at = ? WHERE id = ?')
       .run(row.today, merchantId);
   }

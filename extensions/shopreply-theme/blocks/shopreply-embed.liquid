@@ -1,0 +1,15 @@
+{% assign widget = app.metafields.shopreply.widget.value %}
+{% if widget.api_key != blank and widget.base_url != blank %}
+  <div data-shopreply-embed hidden
+    data-api-key="{{ widget.api_key | escape }}"
+    data-base-url="{{ widget.base_url | escape }}"></div>
+{% endif %}
+
+{% schema %}
+{
+  "name": "ShopReply chat",
+  "target": "body",
+  "javascript": "shopreply-loader.js",
+  "settings": []
+}
+{% endschema %}

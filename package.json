@@ -6,7 +6,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check server.js && node --check db.js && node --check shopify.js && node --check public/static/shopify.js && node --check public/widget/embed.js && node --check extensions/shopreply-theme/assets/shopreply-loader.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

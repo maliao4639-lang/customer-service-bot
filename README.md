@@ -1,4 +1,8 @@
-# Customer Service Bot (v0.1)
+# ShopReply
+
+Shopify App integration is developed on `feat/shopify-app-store`. See [Shopify setup, deployment and review checklist](docs/SHOPIFY.md), [English listing draft](docs/LISTING.md), and [release risks](docs/RELEASE-READINESS.md). The standalone Express console remains available for existing non-Shopify accounts.
+
+Run `npm ci`, `npm run check`, and `npm test` with Node.js 24 LTS. Tests use a temporary database and mocked Shopify/AI services; no merchant data or paid API calls are used.
 
 A tiny embeddable AI customer-service chatbot for small overseas independent e-commerce merchants (Shopify / WooCommerce / any HTML site).
 
@@ -102,13 +106,13 @@ On the demo page you should see a blue chat bubble in the bottom-right corner. C
    ```
 
 3. Merchant pastes that one line into their storefront HTML:
-   - **Shopify:** Online Store → Themes → Edit code → `theme.liquid` → before `</body>`.
+   - **Shopify:** use the Shopify app instead: open its dashboard, follow the theme-editor link, enable ShopReply chat in App embeds, then save. No snippet is required.
    - **WooCommerce:** Appearance → Theme File Editor → `footer.php` → before `<?php wp_footer(); ?>`.
    - **Any HTML site:** just before `</body>`.
 
 4. The chat bubble appears on every page.
 
-That's it. No DNS changes, no Shopify app review.
+The standalone snippet is for non-Shopify sites. Public Shopify distribution requires app registration, development-store testing and App Store review as described in `docs/SHOPIFY.md`.
 
 ---
 

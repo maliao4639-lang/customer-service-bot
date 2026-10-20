@@ -116,6 +116,11 @@ app.use(express.json({
 }));
 app.use(cookieParser(SESSION_SECRET));
 
+// Shopify APIs authenticate with App Bridge ID tokens, independently of cookies.
+const shopify = require('./shopify');
+app.use('/shopify', shopify.router);
+app.use('/api/chat', shopify.storefrontCors);
+
 // ---- Signed session cookie helpers ----------------------------------------
 
 const cookieSignature = require('cookie-signature');
@@ -189,6 +194,8 @@ function chatRateLimit(req, res, next) {
 
 app.use('/admin', express.static(path.join(__dirname, 'public', 'admin')));
 app.use('/static', express.static(path.join(__dirname, 'public', 'static')));
+app.get('/privacy', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'legal', 'privacy.html')));
+app.get('/terms', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'legal', 'terms.html')));
 
 // Public widget loader (the one snippet merchants paste)
 app.get('/embed.js', (_req, res) => {
@@ -339,6 +346,7 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
   const apiKey = String(req.headers['x-api-key'] || req.body?.api_key || '').trim();
   const merchant = lookupMerchantByApiKey(apiKey);
   if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+  const privacyEpoch = shopify.privacyEpoch(merchant.id);
 
   const message = String(req.body?.message ?? '').trim();
   const email = req.body?.email ? String(req.body.email).trim().toLowerCase() : null;
@@ -357,7 +365,6 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
       error: 'monthly_cap_reached',
       used: consume.used,
       cap: consume.cap,
-      upgrade_url: `${PUBLIC_BASE_URL}/pricing`,
     });
   }
 
@@ -386,6 +393,12 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
     }
     return res.status(502).json({ error: 'Our assistant is having trouble right now. Please try again in a moment.' });
   }
+  // An uninstall/redaction may have arrived while the AI provider was replying.
+  if (!db.prepare('SELECT 1 FROM merchants WHERE id=?').get(merchant.id)) return res.status(401).json({ error: 'Store disconnected' });
+  if (shopify.privacyEpoch(merchant.id) !== privacyEpoch) {
+    refundConvo(merchant.id);
+    return res.status(409).json({ error: 'Conversation was cleared. Please start a new question.' });
+  }
   // If we got back but the LLM returned ok:false (network/parse error), still refund.
   if (!result.ok && !result.escalate) {
     refundConvo(merchant.id);
@@ -399,6 +412,7 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
   }
 
   if (result.escalate) {
+    refundConvo(merchant.id);
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       return res.json({
         reply:
@@ -412,6 +426,7 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
     db.prepare(
       `INSERT INTO escalations (merchant_id, email, question) VALUES (?, ?, ?)`
     ).run(merchant.id, email, message);
+    shopify.rememberVisitor(merchant.id, sessionKey, email);
 
     db.prepare(
       `INSERT INTO conversations (merchant_id, session_key, role, content) VALUES (?, ?, 'assistant', ?)`
@@ -434,6 +449,21 @@ app.post('/api/chat', chatRateLimit, async (req, res) => {
     process.stderr.write(`[chat] LLM error: ${result.error}\n`);
   }
   res.status(502).json({ error: 'Our assistant is having trouble right now. Please try again in a moment.' });
+});
+
+// Human handoff must remain available without an AI reply allowance.
+app.post('/api/chat/handoff', chatRateLimit, (req, res) => {
+  const merchant = lookupMerchantByApiKey(String(req.headers['x-api-key'] || '').trim());
+  if (!merchant) return res.status(401).json({ error: 'Invalid API key' });
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const question = String(req.body?.message || '').trim();
+  const sessionKey = String(req.body?.session_key || '').slice(0, 64);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254 || !question || question.length > 2000 || !sessionKey) {
+    return res.status(400).json({ error: 'A question, session and valid email are required' });
+  }
+  db.prepare('INSERT INTO escalations (merchant_id, email, question) VALUES (?, ?, ?)').run(merchant.id, email, question);
+  shopify.rememberVisitor(merchant.id, sessionKey, email);
+  res.json({ reply: 'Thanks! Your question has been saved for the store’s support team.', escalated: true });
 });
 
 // ---- Admin: lifetime slot visibility ---------------------------------------
@@ -565,6 +595,7 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || null;
 // from monthly → annual; doesn't overwrite a higher Lifetime tier).
 // Returns { ok, tier, lifetime_remaining }.
 function applyUpgrade(merchantId, priceKey) {
+  if (shopify.isShopifyMerchant(merchantId)) return { ok: false, error: 'use_shopify_billing' };
   const entry = PRICE_CATALOG[priceKey];
   if (!entry) return { ok: false, error: 'unknown_price_key' };
 
@@ -603,6 +634,7 @@ function applyUpgrade(merchantId, priceKey) {
 
 // 1) Real Stripe Checkout (only when keys are configured).
 app.post('/api/billing/checkout', requireAuth, async (req, res) => {
+  if (shopify.isShopifyMerchant(req.merchant.id)) return res.status(409).json({ error: 'use_shopify_billing' });
   if (!STRIPE_SECRET_KEY) {
     return res.status(503).json({ error: 'stripe_not_configured' });
   }
@@ -684,6 +716,7 @@ if (STRIPE_WEBHOOK_SECRET) {
       const sub = event.data.object;
       const merchantId = Number(sub.metadata?.merchant_id);
       if (merchantId) {
+        if (shopify.isShopifyMerchant(merchantId)) return res.json({ received: true });
         db.prepare(`UPDATE merchants SET tier = 'free', monthly_convo_count = 0, convo_count_reset_at = date('now') WHERE id = ?`).run(merchantId);
       }
     }
@@ -695,12 +728,15 @@ if (STRIPE_WEBHOOK_SECRET) {
 // One trial per merchant. Refuses if they've already used it, or if they're
 // already on a paid tier (no "double dipping" free trial after upgrading).
 app.post('/api/billing/start-trial', requireAuth, (req, res) => {
+  if (shopify.isShopifyMerchant(req.merchant.id)) return res.status(409).json({ error: 'use_shopify_billing' });
   const result = startProTrial(req.merchant.id);
   if (!result.ok) return res.status(409).json(result);
   res.json(result);
 });
 
 if (require.main === module) {
+  shopify.purgeExpired();
+  setInterval(() => shopify.purgeExpired(), 60 * 60 * 1000).unref();
   // Expire any trials whose 7 days have already passed (e.g. server was off
   // when they expired). Cheap (single UPDATE).
   const expired = expireTrials();
