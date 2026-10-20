@@ -6,3 +6,7 @@ data/
 .DS_Store
 *.tmp
 .stripe.env
+.shopify/
+.env.*
+!.env.example
+shopify.app.linked.toml

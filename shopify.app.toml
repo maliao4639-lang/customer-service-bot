@@ -1,12 +1,11 @@
-# Replace the client_id and URLs after creating the app in Shopify Dev Dashboard.
-client_id = "REPLACE_WITH_SHOPIFY_CLIENT_ID"
-name = "ShopReply"
-application_url = "https://YOUR_APP_HOST/shopify"
+# Linked to the existing GetShopReply application using Shopify CLI.
+client_id = "361cd9115e2b28f23410adcc5f64050c"
+name = "GetShopReply"
+application_url = "https://getshopreply.com/shopify"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [access_scopes]
 # Manual policy and FAQ entry; billing and app-owned metafields need no content scopes.
@@ -14,7 +13,7 @@ scopes = ""
 use_legacy_install_flow = false
 
 [auth]
-redirect_urls = ["https://YOUR_APP_HOST/shopify"]
+redirect_urls = ["https://getshopreply.com/shopify"]
 
 [webhooks]
 api_version = "2026-10"

@@ -2,15 +2,19 @@
 
 Draft for owner review; do not submit until the development-store checks and release blockers are closed. Check current field limits in the actual submission form. Keep search terms natural rather than cramming every keyword into the name.
 
-**Name:** ShopReply: AI FAQ Support
+**Name:** GetShopReply ‑ AI FAQ Chatbot
 
-**Subtitle / introduction:** AI customer support for shipping, returns, and store FAQs.
+**Subtitle:** Answer store questions and collect requests for your team.
+
+**Introduction:** AI customer support for shipping, returns, and store FAQs.
+
+**Search terms for relevant submission fields:** AI, FAQ, shipping, returns, customer support. Use natural descriptions; do not repeat search keywords in the subtitle.
 
 **Description:**
 
 Help shoppers get answers from your own store policies and FAQs. Add your shipping and returns information, enable ShopReply in your theme editor, and preview how your assistant responds. When a question needs your team, ShopReply collects the shopper’s question and email for follow-up.
 
-Start free, then choose a fixed-price Pro plan when you need more replies. There are no usage-overage charges. If you reach your monthly allowance, shoppers can still leave a question and email.
+Track your monthly AI reply allowance in the dashboard. If automated replies pause, shoppers can still leave a question and email for your team.
 
 **Feature bullets:**
 
@@ -39,19 +43,20 @@ At least three screenshots at 1600×900, without real visitor information:
 1. **Get started:** embedded dashboard showing the theme-editor activation link and sample shipping/returns policies. Caption: “Add your store policies and enable chat.”
 2. **Storefront support:** real storefront chat answering a shipping question from the entered policy. Caption: “Help shoppers find answers from your store information.”
 3. **Human handoff:** unsupported question, email collection and the matching dashboard handoff. Caption: “Keep questions that need your team in one place.”
-4. Optional **Usage and billing:** real Free/Pro plans and usage inside admin. Caption: “Fixed prices with clear monthly allowances.”
+4. Do not include plan prices, usage statistics or billing screenshots in listing images. Keep all numeric pricing information in the dedicated Pricing fields.
 
-App icon: 1200×1200 PNG using owner-approved artwork. No icon or review screenshot is fabricated by this code change. Optional short demo: install → App Embed → save policies → grounded answer → handoff. Avoid unsupported AI accuracy, Lighthouse or setup-time claims.
+App icon: 1200×1200 PNG rendered from `assets/getshopreply-icon.svg` (proposed artwork for owner review). Local UI previews with sample data are drafts, not proof of development-store acceptance. Replace them with verified-store captures before submission. Record an English demo screencast: install → App Embed → save policies → grounded answer → handoff. Avoid unsupported accuracy, performance or setup-time claims.
 
 ## Submission fields to complete
 
 - App URL: deployed HTTPS origin + `/shopify`.
 - Privacy policy: `https://getshopreply.com/privacy` after this route is deployed and the text finalized.
 - Terms: `https://getshopreply.com/terms` after deployment and final review.
-- Support email: provision and verify a domain address such as `support@getshopreply.com`. Current repository pages use the existing `maliao4639@gmail.com`; do not claim the domain mailbox exists yet.
-- Support/review contacts, verified operator name and required address/jurisdiction details: owner supplies.
+- Support email: `support@getshopreply.com` (owner confirmed Namecheap Private Email is active).
+- Operator: Maliao, individual developer. Address: No. 269 Chenghua North Road, Fengze District, Quanzhou, Fujian, China 362000.
 - Review store/test access: owner supplies through Shopify's secure review form; no real credentials in source control.
-- AI provider name, hosting/processing locations, backup retention and applicable disclosures: owner confirms and updates policy.
+- Providers confirmed by owner: Vultr hosting and DeepSeek AI. Shopify app billing and Namecheap support email are disclosed. SQLite is embedded database software. Actual model, hosting region, backup policy and any separate standalone Paddle/Resend flows still require server reconciliation.
+- Languages: English only. Sales channel requirement: merchant must have Online Store. Distribution: regular public app, not Sales Channel.
 
 ## Reviewer test instructions draft
 

@@ -25,7 +25,7 @@ const { generateAnswer, loadFaqs } = require('./llm');
 
 const PORT = Number(process.env.PORT || 3000);
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
-const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
+const PUBLIC_BASE_URL = require('./runtime-config').publicBaseUrl();
 
 // ---- Pricing tiers (2026-09-23 update: B-option Lifetime 3-tier) ----------
 // Display only; billing is not yet wired up. Mirrors the table in
@@ -512,6 +512,12 @@ app.get('/api/demo/key', (_req, res) => {
 // ---- Demo page so merchants can preview the widget ------------------------
 
 app.get('/', (_req, res) => {
+  // app dev can open the tunnel root even when production uses /shopify.
+  if (typeof _req.query.shop === 'string' && /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(_req.query.shop)) {
+    const params = new URLSearchParams();
+    for (const key of ['shop', 'host', 'embedded']) if (typeof _req.query[key] === 'string') params.set(key, _req.query[key]);
+    return res.redirect(`/shopify?${params}`);
+  }
   res.sendFile(path.join(__dirname, 'public', 'demo.html'));
 });
 

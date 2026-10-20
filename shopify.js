@@ -9,8 +9,8 @@ const { generateAnswer, loadFaqs } = require('./llm');
 const router = express.Router();
 const API_VERSION = '2026-10';
 const PLANS = Object.freeze({
-  pro_monthly: { name: 'ShopReply Pro Monthly', amount: 21, interval: 'EVERY_30_DAYS' },
-  pro_annual: { name: 'ShopReply Pro Annual', amount: 205, interval: 'ANNUAL' },
+  pro_monthly: { name: 'GetShopReply Pro Monthly', amount: 21, interval: 'EVERY_30_DAYS' },
+  pro_annual: { name: 'GetShopReply Pro Annual', amount: 205, interval: 'ANNUAL' },
 });
 
 db.exec(`
@@ -36,7 +36,7 @@ function config() {
   const c = {
     client: process.env.SHOPIFY_API_KEY, secret: process.env.SHOPIFY_API_SECRET,
     key: process.env.SHOPIFY_TOKEN_ENCRYPTION_KEY,
-    base: (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
+    base: require('./runtime-config').publicBaseUrl(),
     test: process.env.SHOPIFY_BILLING_TEST === 'true',
   };
   if (!c.client || !c.secret || !/^[a-f\d]{64}$/i.test(c.key || '') || !/^https:\/\//.test(c.base)) {
@@ -265,6 +265,13 @@ function previewLimit(shop) {
 router.post('/api/escalations/:id/resolve', (req, res) => {
   const r = db.prepare('UPDATE escalations SET resolved=1 WHERE merchant_id=? AND id=?').run(req.shopRow.merchant_id, Number(req.params.id));
   res.status(r.changes ? 200 : 404).json({ ok: !!r.changes });
+});
+router.get('/api/conversations', (req, res) => {
+  const before = req.query.before === undefined ? Number.MAX_SAFE_INTEGER : Number(req.query.before);
+  if (!Number.isSafeInteger(before) || before < 1) return res.status(400).json({ error: 'Invalid conversation cursor' });
+  const messages = db.prepare(`SELECT id, session_key, role, content, created_at FROM conversations
+    WHERE merchant_id=? AND id < ? ORDER BY id DESC LIMIT 100`).all(req.shopRow.merchant_id, before);
+  res.json({ messages, next_before: messages.length === 100 ? messages[messages.length - 1].id : null });
 });
 router.post('/api/billing', safe(async (req, res) => {
   const plan = PLANS[req.body?.plan];

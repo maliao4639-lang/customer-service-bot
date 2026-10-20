@@ -76,6 +76,22 @@
     else { await refresh(false); status('This plan is already active.'); }
   }); }
   $('add-faq').addEventListener('click', function () { addFaq({}); });
+  var conversationCursor = null;
+  function loadConversations(older) { run(async function () {
+    var result = await api('conversations' + (older && conversationCursor ? '?before=' + conversationCursor : ''));
+    if (!older) $('conversations').replaceChildren();
+    if (!result.messages.length && !older) $('conversations').append(element('s-paragraph', 'No conversations yet.'));
+    result.messages.forEach(function (m) {
+      var row = element('s-section');
+      row.append(element('s-paragraph', (m.role === 'user' ? 'Visitor' : 'Assistant') + ' · ' + m.created_at + ' UTC · Conversation ' + m.session_key.slice(0, 8)), element('s-paragraph', m.content));
+      $('conversations').appendChild(row);
+    });
+    conversationCursor = result.next_before;
+    $('older-conversations').style.display = conversationCursor ? '' : 'none';
+    status('Conversation history loaded.');
+  }); }
+  $('load-conversations').addEventListener('click', function () { loadConversations(false); });
+  $('older-conversations').addEventListener('click', function () { loadConversations(true); });
   $('save').addEventListener('click', function () { run(async function () {
     var body = {}; ['brand_name', 'shipping_info', 'return_policy', 'extra_info'].forEach(function (key) { body[key] = $(key).value || ''; });
     body.faqs = Array.from($('faq-list').children).map(function (row) { return { question: row.querySelector('.faq-question').value || '', answer: row.querySelector('.faq-answer').value || '' }; });
@@ -93,7 +109,7 @@
     await api('billing/cancel', 'POST', { confirmed: true }); $('cancel-confirm').hidden = true; await refresh(false); status('Paid subscription cancelled. Free plan is active.');
   }); });
   run(async function () {
-    if (!window.shopify) throw new Error('Open ShopReply from your Shopify admin to continue.');
+    if (!window.shopify) throw new Error('Open GetShopReply from your Shopify admin to continue.');
     await Promise.all(['s-text-field', 's-text-area', 's-button'].map(function (name) { return customElements.whenDefined(name); }));
     await api('connect', 'POST', {}); await refresh(true); status('Connected. Complete the steps below to start answering questions.');
   });

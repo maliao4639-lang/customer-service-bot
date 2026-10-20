@@ -2,6 +2,10 @@
 
 This branch extends the existing Express + Node SQLite service. It does not create a second backend or migrate existing accounts automatically. Shopify authentication is independent of standalone login cookies. Node 24 LTS is recommended.
 
+## Handoff 2 update (2026-10-20)
+
+The owner completed CLI browser authentication. CLI 4.9.4 linked the existing GetShopReply app in the GetShopReply organization. The actual development store domain discovered by CLI is `getshopreply-test-4k85f5hy.myshopify.com`, rather than the shorter display name. Canonical production URLs now use `https://getshopreply.com/shopify`; no additional DNS is needed. See `DEPLOYMENT.md`, `INTEGRATION-RESULTS.md`, `OWNER-STEPS.md` and `APP-STORE-CHECKLIST.md` for the current evidence and remaining actions. The live website differs from this GitHub baseline and must be reconciled before a server deployment.
+
 ## Architecture
 
 - `/shopify`: embedded App Home, App Bridge and Polaris web components (stable v1 CDN).
@@ -26,11 +30,11 @@ Tests create and remove their own temporary SQLite directory, mock Shopify and A
 
 For actual Shopify development:
 
-1. The owner creates a Shopify developer/Partner account, a public app and a development store. Complete account verification and any applicable registration charge directly with Shopify.
-2. Install Shopify CLI using Shopify's current documented installation instructions. In the app directory, link this app configuration to the registered app with `shopify app config link`. Preserve the listed webhooks, managed installation and empty scopes when reconciling generated configuration.
+1. Use the existing GetShopReply organization and GetShopReply app. Do not create a duplicate app. The owner completes browser authentication and any applicable registration payment directly with Shopify.
+2. Install the pinned CLI with `npm install --prefix ../shopify-cli @shopify/cli@4.9.4`. Use `npm run shopify -- app config link --file-name linked`, then `node scripts/configure-shopify.js` and `npm run shopify -- app config use shopify.app.toml`. The helper imports the linked public client ID while retaining this branch's URLs, empty scopes and webhooks; it does not print credentials.
 3. Copy `.env.example` to `.env`; supply `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SESSION_SECRET`, AI provider configuration and `SHOPIFY_TOKEN_ENCRYPTION_KEY`. The encryption key must be 32 random bytes as 64 hex characters. Generate it locally and put it directly in your environment/secret manager; do not paste it in chat or logs.
 4. Set an HTTPS `PUBLIC_BASE_URL` reachable by Shopify. It is the **origin**, without `/shopify`. Configure the CLI tunnel or an HTTPS development host; keep the environment value aligned with the app URL origin. Use a separate database (`CSB_DATA_DIR`) and `SHOPIFY_BILLING_TEST=true` for development.
-5. Run `shopify app dev`. The Express dev command is declared in `shopify.web.toml`; it uses `PORT` supplied by the CLI. Select the development store and open the app from Shopify admin.
+5. Run `npm run shopify -- app dev --config shopify.app.toml --store getshopreply-test-4k85f5hy.myshopify.com`. The wrapper reads local `.env` for CLI flags such as `SHOPIFY_FLAG_STORE_PASSWORD`. The Express dev command is declared in `shopify.web.toml`; it uses `PORT` and the public `APP_URL` / `HOST` (or `SHOPIFY_APP_URL` compatibility alias) supplied by CLI. Shopify requests to the tunnel root redirect to `/shopify` without forwarding an ID token in the URL. Production explicitly uses `PUBLIC_BASE_URL`.
 6. Open the dashboard once so it exchanges the session token, creates the shop account and publishes its widget configuration. Enter policies/FAQs, enable ShopReply chat in App embeds, and save the theme. The deep link selects `CLIENT_ID/shopreply-embed`.
 7. Use Shopify CLI validation/build for the extension, and check the generated extension `uid` into the branch if Shopify assigns one. This cannot be completed without the owner's app registration.
 

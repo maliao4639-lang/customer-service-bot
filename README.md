@@ -2,6 +2,8 @@
 
 Shopify App integration is developed on `feat/shopify-app-store`. See [Shopify setup, deployment and review checklist](docs/SHOPIFY.md), [English listing draft](docs/LISTING.md), and [release risks](docs/RELEASE-READINESS.md). The standalone Express console remains available for existing non-Shopify accounts.
 
+Handoff 2: the existing GetShopReply app is now linked through CLI, and extension/config version `getshopreply-3` is uploaded without release. The canonical app URL is `https://getshopreply.com/shopify`. See [integration results](docs/INTEGRATION-RESULTS.md), [production proposal](docs/DEPLOYMENT.md), [owner steps](docs/OWNER-STEPS.md) and [item-by-item App Store self-check](docs/APP-STORE-CHECKLIST.md). No production backend rollout is included.
+
 Run `npm ci`, `npm run check`, and `npm test` with Node.js 24 LTS. Tests use a temporary database and mocked Shopify/AI services; no merchant data or paid API calls are used.
 
 A tiny embeddable AI customer-service chatbot for small overseas independent e-commerce merchants (Shopify / WooCommerce / any HTML site).

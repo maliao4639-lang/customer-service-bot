@@ -89,6 +89,16 @@ test('Shopify integration: isolated database and mocked external services', asyn
     } });
   }
   try {
+    await t.test('CLI tunnel origin takes precedence in development while production uses the canonical host', async () => {
+      const { publicBaseUrl } = require('../runtime-config');
+      assert.equal(publicBaseUrl({ SHOPIFY_APP_URL: 'https://tunnel.example.test/', PUBLIC_BASE_URL: 'https://getshopreply.com' }), 'https://tunnel.example.test');
+      assert.equal(publicBaseUrl({ NODE_ENV: 'production', SHOPIFY_APP_URL: 'https://tunnel.example.test', PUBLIC_BASE_URL: 'https://getshopreply.com/' }), 'https://getshopreply.com');
+      assert.equal(publicBaseUrl({ HOST: 'https://alias.example.test' }), 'https://alias.example.test');
+      assert.equal(publicBaseUrl({ NODE_ENV: 'development', APP_URL: 'https://cli.example.test', HOST: 'https://cli.example.test', PUBLIC_BASE_URL: 'https://getshopreply.com' }), 'https://cli.example.test');
+      const redirect = await nativeFetch(base + '/?shop=' + A + '&host=test-host&id_token=do-not-forward', { redirect: 'manual' });
+      assert.equal(redirect.status, 302);
+      assert.equal(redirect.headers.get('location'), '/shopify?shop=' + A + '&host=test-host');
+    });
     await t.test('rejects absent, tampered, expired and wrong-store session claims', async () => {
       assert.equal((await request('/shopify/api/state')).status, 401);
       for (const claims of [{ aud: 'other' }, { exp: 1 }, { nbf: Date.now() / 1000 + 60 }, { iss: 'https://other.myshopify.com/admin' }, { dest: 'https://evil.test' }, { iat: 'not-a-time' }, { sub: '' }, { sid: '' }]) {
@@ -204,6 +214,12 @@ test('Shopify integration: isolated database and mocked external services', asyn
       assert.equal(merchant(A).monthly_convo_count, 1);
       assert.equal((await api(A, 'preview', 'POST', { message: 'Other?' })).status, 200);
       assert.equal(merchant(A).monthly_convo_count, 1); answer = 'Shipping takes 3 days.';
+    });
+    await t.test('all collected chat messages are accessible only in the owning shop dashboard', async () => {
+      const history = await api(A, 'conversations');
+      assert.equal(history.status, 200); assert.ok(history.data.messages.length > 0);
+      assert.equal((await api(B, 'conversations')).data.messages.length, 0);
+      assert.equal((await api(A, 'conversations?before=invalid')).status, 400);
     });
     await t.test('in-flight AI replies cannot recreate data after customer erasure', async () => {
       const started = new Promise(resolve => { pauseLlm = resolve; });
