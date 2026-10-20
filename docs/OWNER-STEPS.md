@@ -34,6 +34,8 @@ CLI 打开 Shopify 页面后，所有需要 Google/Shopify 登录的操作由你
 
 ## 本人完成的审核与发布步骤
 
+先在已有 GetShopReply 应用的 Home → Distribution → Select distribution method 选择 **Public distribution / Shopify App Store**。真实 Billing API 已返回尚未公开分发的限制，必须先完成这一设置才能继续测试收费。不要选择 Custom；分发方式选择后不可更改，详见 [Shopify 官方说明](https://shopify.dev/docs/apps/launch/distribution/select-distribution-method)。如果页面已经显示 Custom，请保留现状并告知开发者，不要重复创建应用或尝试绕过。
+
 1. 在 Partner/Dev Dashboard 查看 App Store 注册状态，按 Shopify 当前页面支付一次性登记费用。交接单预期为 USD 19；以你的实际结算页面为准。本任务不会代付。
 2. 确认 Pro 当前仅增加到每月 500 条回复，价格为 USD 21/30 天或 USD 205/年。去品牌、CSV 导出、周报是待决定功能，目前未实现，不应写成现有权益。
 3. 在 `docs/APP-STORE-CHECKLIST.md` 中关闭真实安装、回答、计费、webhook、性能、域名法律页和服务器代码差异等待验收项。按 `docs/LISTING.md` 拍摄真实商店截图并录制英文演示；本地样例截图只能作草稿。

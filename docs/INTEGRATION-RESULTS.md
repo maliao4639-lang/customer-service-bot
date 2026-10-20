@@ -12,16 +12,18 @@
 | 官方构建 | 通过 | `app build` 和 Theme Check；修复 locale 目录缺失后重新构建无该错误 |
 | 版本上传 | 已上传未发布 | 已创建 [getshopreply-3](https://dev.shopify.com/dashboard/241817759/apps/437534851073/versions/1173732229121)；使用 `--no-release`，Theme Check / bundling / validation 成功；未切换生产活动版本 |
 | 本地启动 | 通过 | 更正密码后 CLI 开发预览已启动，主题服务器 ready，真实隧道可用 |
-| 安装 / OAuth / App Home | 未验收 | CLI 已确认安装；App Bridge token exchange 和实际后台仍待测试窗口登录后验收 |
+| 安装 / OAuth / App Home | 通过 | 负责人在普通浏览器看到真实后台；开发数据库确认已获取加密离线凭据，真实 Admin GraphQL 查询成功，widget 配置已发布 |
 | Theme Editor / App Embed | 未验收 | 扩展已构建上传，实际主题开启和保存尚未操作 |
 | 实际 AI 回答 | 未验收 | 未配置实际 DeepSeek 密钥/模型，不使用假回答冒充联调结果 |
-| Shopify 月付/年付 test billing | 未验收 | 本地逻辑已测试，真实 Shopify 确认页未走通 |
+| Shopify 月付/年付 test billing | 阻塞 | 真实 test:true 月付创建返回 Apps without a public distribution cannot use the Billing API；等待负责人设置 Public distribution。没有产生收费或激活 Pro |
 | 取消 / 降级 | 未验收 | 本地逻辑已测试，真实订阅操作未进行 |
 | GDPR / 卸载投递 | 未验收 | 本地验签/删除/重装测试通过，真实 webhook 尚未触发 |
 | Lighthouse | 未测量 | 不报告虚构分数 |
 | 本地后端回归 | 通过 | 20 个场景，Node 测试器含父测试共 21 项；隔离数据库，模拟 Shopify/AI 服务 |
 | 本地素材 | 已生成草稿 | 三张不同 UI 视图 1600×900；原创 SVG 与 1200×1200 PNG；明确非真实开发店证明 |
 | 生产操作 | 未执行 | main、Vultr 服务、DNS 和真实收费均未更改 |
+
+真实接口只读检查确认 activeSubscriptions 为空，本地权益为 Free、用量 0；公开 widget origin 与 CLI 当前隧道一致。独立自动化 Edge 登录卡在 Cloudflare 验证页，普通浏览器登录后已成功连接。前台预览可以通过店铺密码，但尚未检测到 App Embed，等待主题启用并保存。
 
 ## 本轮修复
 

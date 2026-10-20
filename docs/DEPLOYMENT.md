@@ -29,6 +29,8 @@ A future `app` subdomain also needs a Caddy virtual host/TLS certificate and con
 
 ## Important baseline mismatch
 
+Historical local deployment records and a later local Git project have now been found. They identify `/opt/csb`, `csb.service`, `/opt/csb/data/app.db`, `/opt/csb/.env` and a separate Paddle environment; these paths still need current-server verification. See `BASELINE-RECONCILIATION.md` for the candidate source and safe hash-check commands. Existing SSH authentication was unavailable, so no current server source was read.
+
 The live privacy notice describes DeepSeek, Vultr, Paddle and a Resend-assisted order-lookup pilot. This repository baseline has Stripe scaffolding and no pilot implementation. The owner confirmed Vultr/DeepSeek, but no server source or runtime configuration has been accessed. Public policy statements alone do not prove a feature is currently active. Before merging/deploying, compare the running application with GitHub, import legitimate missing code into an audited branch, and preserve the live billing, order lookup and static pages. Do not overwrite the running server with this older baseline.
 
 ## Environment variables
