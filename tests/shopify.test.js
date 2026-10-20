@@ -46,7 +46,7 @@ global.fetch = async function (url, opts) {
     return Response.json({ access_token: 'fake-admin-access', refresh_token: 'fake-refresh', expires_in: 3600 });
   }
   const { query, variables } = JSON.parse(opts.body);
-  if (query.includes('query Connect')) return Response.json({ data: { shop: { id: `gid://shopify/Shop/${u.hostname}`, name: 'Test store' }, currentAppInstallation: { id: 'gid://shopify/AppInstallation/1' } } });
+  if (query.includes('query Connect')) return Response.json({ data: { shop: { id: `gid://shopify/Shop/${u.hostname}`, name: 'Test store' }, currentAppInstallation: { id: s.installationId || 'gid://shopify/AppInstallation/1' } } });
   if (query.includes('mutation PublishWidget')) { s.metafields = variables.metafields; return Response.json({ data: { metafieldsSet: { userErrors: [] } } }); }
   if (query.includes('query Subscriptions')) {
     if (failBilling) return Response.json({ errors: [{ message: 'Temporary upstream failure' }] });
@@ -256,6 +256,22 @@ test('Shopify integration: isolated database and mocked external services', asyn
       assert.ok(shell.headers.get('content-security-policy').includes(A));
       assert.equal((await request('/privacy')).status, 200); assert.equal((await request('/terms')).status, 200);
       assert.equal((await request('/embed.js')).status, 200);
+    });
+    await t.test('fresh install recovers revoked credentials when the uninstall notification is missing', async () => {
+      const previous = merchant(A);
+      const before = calls.filter(c => c.url.includes('/admin/oauth/access_token')).length;
+      stores.get(A).installationId = 'gid://shopify/AppInstallation/2';
+      db.prepare('INSERT INTO conversations(merchant_id,session_key,role,content) VALUES (?,?,?,?)').run(previous.id,'old-install','user','Old installation data');
+      assert.equal((await api(A, 'connect', 'POST', {})).status, 200);
+      const next = merchant(A);
+      assert.notEqual(next.id, previous.id);
+      assert.notEqual(next.api_key, previous.api_key);
+      assert.equal(db.prepare('SELECT 1 FROM merchants WHERE id=?').get(previous.id), undefined);
+      assert.equal(db.prepare('SELECT count(*) n FROM conversations WHERE merchant_id=?').get(previous.id).n, 0);
+      assert.equal(calls.filter(c => c.url.includes('/admin/oauth/access_token')).length, before + 1);
+      assert.equal((await request('/api/chat/handoff', {method:'POST',headers:{'X-API-Key':previous.api_key},body:{message:'Old key',email:'x@y.test',session_key:'old-install'}})).status, 401);
+      assert.equal((await api(A, 'connect', 'POST', {})).status, 200);
+      assert.equal(merchant(A).id, next.id);
     });
     await t.test('uninstall deletes owned data, invalidates key and cannot erase another shop', async () => {
       const key = merchant(A).api_key, merchantId = row(A).merchant_id;

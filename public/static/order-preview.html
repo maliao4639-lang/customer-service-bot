@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Order lookup preview — GetShopReply</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:#162333;font:16px/1.6 system-ui,sans-serif}
+    main{max-width:720px;margin:48px auto;padding:24px}h1{font-size:30px;line-height:1.2}
+    a{color:#145ec5}.card{background:white;border:1px solid #dce4ed;border-radius:16px;padding:24px;margin-top:24px}
+    button{background:#2563eb;color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;cursor:pointer}
+    [hidden]{display:none!important}#status{overflow-wrap:anywhere}footer{margin-top:28px;font-size:14px}
+  </style>
+</head>
+<body>
+<main>
+  <a href="/admin">Back to your dashboard</a>
+  <h1>Test your order lookup</h1>
+  <p>This preview uses the widget for your signed-in GetShopReply account.</p>
+  <div class="card">
+    <p id="status" role="status">Checking your account…</p>
+    <div id="instructions" hidden>
+      <ol>
+        <li>Open the chat bubble and choose <strong>Where is my order?</strong></li>
+        <li>Enter the exact order number and checkout email.</li>
+        <li>Check your inbox, then enter the six-digit code in the widget.</li>
+      </ol>
+      <p>Use only an order and email you control. The code expires in five minutes. Do not share it in chat.</p>
+    </div>
+    <p id="login" hidden><a href="/admin" target="_blank" rel="noopener">Sign in to GetShopReply</a>, then return here and refresh.</p>
+    <button id="refresh" type="button" hidden>Refresh this page</button>
+  </div>
+  <footer><a href="/privacy">Privacy policy</a> · <a href="mailto:support@getshopreply.com">Support</a></footer>
+</main>
+<script>
+(async function () {
+  var status = document.getElementById('status');
+  document.getElementById('refresh').onclick = function () { location.reload(); };
+  try {
+    var response = await fetch('/api/admin/me', {credentials:'same-origin',cache:'no-store'});
+    if (response.status === 401) {
+      status.textContent = 'Sign in to preview your own store widget.';
+      document.getElementById('login').hidden = false;
+      document.getElementById('refresh').hidden = false;
+      return;
+    }
+    if (!response.ok) throw new Error('Account check failed');
+    var account = await response.json();
+    var available = await fetch('/api/order-lookup/capabilities', {method:'POST',credentials:'omit',cache:'no-store',
+      headers:{'Content-Type':'application/json','X-API-Key':account.apiKey},body:'{}'});
+    if (!available.ok) {
+      status.textContent = 'Order lookup is not enabled for this account. Contact support if you are participating in the pilot.';
+      return;
+    }
+    var script = document.createElement('script');
+    script.src = '/embed.js'; script.setAttribute('data-api-key',account.apiKey);
+    script.onload = function () { status.textContent='Your order lookup is ready to test.'; document.getElementById('instructions').hidden=false; if(window.CSB)window.CSB.open(); };
+    script.onerror = function () { status.textContent='The widget could not load. Refresh to try again.'; document.getElementById('refresh').hidden=false; };
+    document.body.appendChild(script);
+  } catch (_) { status.textContent='Unable to connect. Refresh to try again.'; document.getElementById('refresh').hidden=false; }
+})();
+</script>
+</body>
+</html>

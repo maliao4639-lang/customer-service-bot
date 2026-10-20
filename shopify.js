@@ -190,8 +190,9 @@ router.post('/api/connect', safe(async (req, res) => {
   await locked(shop, async () => {
     let row = shopRow(shop);
     if (row?.uninstalled_at && issued <= row.uninstalled_at) throw Object.assign(new Error('Session predates uninstall'), { status: 401 });
-    // ID-token exchange is also used to recover an expired offline token.
-    if (!row?.credentials || unseal(row.credentials).expires < Date.now() + 60000) {
+    // A fresh App Bridge session must not depend on cached credentials: an
+    // uninstall can revoke them before its notification reaches this service.
+    {
       const t = await postToken(shop, {
         grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange', subject_token: req.idToken,
         subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
@@ -201,6 +202,11 @@ router.post('/api/connect', safe(async (req, res) => {
       transaction(() => {
         row = shopRow(shop);
         let merchantId = row?.merchant_id;
+        if (row?.installation_gid && row.installation_gid !== data.currentAppInstallation.id) {
+          db.prepare('DELETE FROM merchants WHERE id=?').run(merchantId);
+          db.prepare('DELETE FROM shopify_privacy_requests WHERE shop=?').run(shop);
+          merchantId = null;
+        }
         if (!merchantId) {
           merchantId = Number(db.prepare(`INSERT INTO merchants (email, password_hash, brand_name, api_key)
             VALUES (?, 'SHOPIFY_ONLY', ?, ?)`).run(`${randomToken(16)}@shopify.invalid`, data.shop.name, 'csb_' + randomToken(16)).lastInsertRowid);
@@ -208,7 +214,8 @@ router.post('/api/connect', safe(async (req, res) => {
         db.prepare(`INSERT INTO shopify_shops (shop, merchant_id, shop_gid, installation_gid, credentials, installed_at)
           VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(shop) DO UPDATE SET merchant_id=excluded.merchant_id,
           shop_gid=excluded.shop_gid, installation_gid=excluded.installation_gid, credentials=excluded.credentials,
-          installed_at=CASE WHEN shopify_shops.uninstalled_at IS NULL THEN shopify_shops.installed_at ELSE excluded.installed_at END,
+          installed_at=CASE WHEN shopify_shops.uninstalled_at IS NULL AND shopify_shops.installation_gid=excluded.installation_gid
+            THEN shopify_shops.installed_at ELSE excluded.installed_at END,
           uninstalled_at=NULL`).run(shop, merchantId, data.shop.id, data.currentAppInstallation.id, seal(t), issued);
       });
     }

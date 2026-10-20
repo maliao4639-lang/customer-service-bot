@@ -14,15 +14,15 @@ SHOPIFY_FLAG_STORE_PASSWORD="在这里填写前台密码"
 
 前台密码在开发店 Online Store → Preferences → Password protection 中查看。它不是 Google 密码、Shopify 账号密码或 App secret。
 
-AI 环境还需要服务器实际使用的三个值。不要发送密钥到聊天，直接在 `.env` 填写并保存：
+开发测试的 DeepSeek 密钥已由负责人在本地保存，真实回答和转人工已通过。当前开发用配置如下；密钥不要发送到聊天：
 
 ```dotenv
-LLM_BASE_URL=从服务器核对的DeepSeek接口地址
-LLM_MODEL=从服务器核对的模型名称
-LLM_API_KEY=从服务器安全复制的DeepSeek密钥
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-flash
+LLM_API_KEY=仅在本地填写的开发账号密钥
 ```
 
-服务商已由你确认是 Vultr 和 DeepSeek，但仓库默认值不能证明服务器实际模型。若没有服务器访问权限，先联系管理 Vultr 实例的人；不要凭模型名称猜测。账号和 App secrets 同样只放本地或服务器的受保护配置中。
+开发模型不是生产配置的证明；线上实际模型、服务运行配置仍需核对。账号和 App secrets 同样只放本地或服务器的受保护配置中。
 
 可复制的启动命令：
 
@@ -34,7 +34,24 @@ CLI 打开 Shopify 页面后，所有需要 Google/Shopify 登录的操作由你
 
 ## 本人完成的审核与发布步骤
 
-先在已有 GetShopReply 应用的 Home → Distribution → Select distribution method 选择 **Public distribution / Shopify App Store**。真实 Billing API 已返回尚未公开分发的限制，必须先完成这一设置才能继续测试收费。不要选择 Custom；分发方式选择后不可更改，详见 [Shopify 官方说明](https://shopify.dev/docs/apps/launch/distribution/select-distribution-method)。如果页面已经显示 Custom，请保留现状并告知开发者，不要重复创建应用或尝试绕过。
+已有 GetShopReply 应用已由负责人设置为公开发布，无需重复选择。月付、切换年付、取消和恢复 Free 的真实测试计费已通过。分发方式选定后不可更改，详见 [Shopify 官方说明](https://shopify.dev/docs/apps/launch/distribution/select-distribution-method)。
+
+## Vultr 只读源码核对
+
+1. 登录 https://my.vultr.com/，进入 Products → Compute。
+2. 找到 IP 为 `139.180.143.31` 的服务器，点击名称进入详情。
+3. 点击右上角 View Console；如浏览器拦截，允许此次弹窗。
+4. 如果出现 login:，使用服务器详情页的用户名登录；密码由负责人本人输入，不发送到聊天。控制台输入密码时可能不显示字符。不要选择重置密码、重装或重启。
+5. 出现 shell 提示符后，复制执行下列只读命令：
+
+```sh
+sha256sum /opt/csb/server.js /opt/csb/db.js /opt/csb/package.json /opt/csb/llm.js
+systemctl is-active csb
+```
+
+把这五行结果提供给开发者比对即可，不需要发送环境文件、数据库、密码或密钥。此操作只读取源码文件哈希与服务状态，不修改线上。若目录不存在或权限不足，保留错误信息，不尝试变更服务器权限。
+
+## 本人完成的审核与发布步骤（续）
 
 1. 在 Partner/Dev Dashboard 查看 App Store 注册状态，按 Shopify 当前页面支付一次性登记费用。交接单预期为 USD 19；以你的实际结算页面为准。本任务不会代付。
 2. 确认 Pro 当前仅增加到每月 500 条回复，价格为 USD 21/30 天或 USD 205/年。去品牌、CSV 导出、周报是待决定功能，目前未实现，不应写成现有权益。

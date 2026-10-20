@@ -45,6 +45,7 @@
   });
 
   function showAuth() {
+    document.getElementById('order-preview-entry').hidden = true;
     authView.hidden = false;
     consoleView.hidden = true;
   }
@@ -230,12 +231,19 @@
         var trialNote = data.trial_days_left != null
           ? ' &middot; <strong>Trial: ' + data.trial_days_left + ' day' + (data.trial_days_left === 1 ? '' : 's') + ' left</strong>'
           : '';
-        usageText.innerHTML = data.used + ' of ' + data.cap + ' conversations used this month' + trialNote;
+        usageText.innerHTML = data.used + ' of ' + data.cap + ' AI replies used this month' + trialNote;
         renderUpgradeTiers(data);
       });
   }
 
   function renderUpgradeTiers(usage) {
+    document.getElementById('upgrade-card').hidden = usage.billing_enabled === false;
+    if (usage.billing_enabled === false) return;
+    if (usage.billing_provider === 'paddle') {
+      upgradeTiersEl.innerHTML = '<p>Pro includes 500 AI replies per store each month. US$21/month or US$205/year; applicable taxes shown at checkout.</p><p><a href="/billing/paddle">Subscribe or manage your subscription</a></p>';
+      return;
+    }
+
     var currentTier = usage.tier;
     var onTrial = usage.trial_days_left != null;
     upgradeTiersEl.innerHTML = '';
@@ -345,6 +353,14 @@
       .then(function (data) {
         if (!data) return;
         who.textContent = data.merchant.email;
+        var orderPreviewEntry = document.getElementById('order-preview-entry');
+        orderPreviewEntry.hidden = true;
+        fetch('/api/order-lookup/capabilities', {
+          method: 'POST', credentials: 'omit', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': data.apiKey }, body: '{}'
+        }).then(function (response) { return response.ok ? response.json() : null; })
+          .then(function (value) { orderPreviewEntry.hidden = !(value && value.enabled === true); })
+          .catch(function () { orderPreviewEntry.hidden = true; });
         var m = data.merchant;
         storeForm.brand_name.value = m.brand_name || '';
         storeForm.return_policy.value = m.return_policy || '';

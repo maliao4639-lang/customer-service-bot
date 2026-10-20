@@ -91,6 +91,25 @@ db.exec(`
     ('lifetime_3',  20, 0);
 `);
 
+// Stripe webhook idempotency ledger. Stripe sends the same event id on retries;
+// we record the first time we process it so a retried delivery doesn't
+// double-charge a Lifetime slot or double-apply a tier upgrade.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS webhook_events (
+    event_id    TEXT PRIMARY KEY,
+    event_type  TEXT NOT NULL,
+    received_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+// Stripe customer / subscription linkage on the merchant row. Lets the webhook
+// handler resolve a Stripe subscription back to our merchant even when the
+// payload doesn't include client_reference_id (e.g. invoice.payment_succeeded
+// for renewals).
+safeAlter("ALTER TABLE merchants ADD COLUMN stripe_customer_id TEXT");
+safeAlter("ALTER TABLE merchants ADD COLUMN stripe_subscription_id TEXT");
+safeAlter("ALTER TABLE merchants ADD COLUMN subscription_status TEXT");
+
 // ---- Helpers ---------------------------------------------------------------
 
 function randomToken(bytes = 24) {
@@ -258,5 +277,21 @@ module.exports = {
   startProTrial,
   expireTrials,
   getTrialStatus,
+  recordWebhookEvent,
+  isWebhookEventProcessed,
   TRIAL_DAYS,
 };
+
+// Record a Stripe webhook event id so the same delivery is processed at most
+// once. Returns true if the event was newly inserted, false if it had already
+// been seen (Stripe retry, replay, or accidental duplicate).
+function recordWebhookEvent(eventId, eventType) {
+  const result = db
+    .prepare('INSERT OR IGNORE INTO webhook_events (event_id, event_type) VALUES (?, ?)')
+    .run(eventId, eventType);
+  return result.changes === 1;
+}
+
+function isWebhookEventProcessed(eventId) {
+  return !!db.prepare('SELECT 1 FROM webhook_events WHERE event_id = ?').get(eventId);
+}

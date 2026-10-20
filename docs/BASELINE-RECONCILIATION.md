@@ -7,9 +7,11 @@
 - GitHub main 基线：`aaf98db248f1fc7fd039e64cbde0d53131504f74`，早期 Stripe 代码。
 - 本机历史项目：`C:/Users/21267/Documents/Codex/2026-09-27/i/work/getshopreply-brand`；HEAD 为 `4536ef4`，前序包括 `f138829` 和订单试点 `820980f`。
 - 历史阶段二部署记录日期为 2026-10-01，记录 `/opt/csb` 的订单试点部署和 `csb.service` 重启；历史正式订阅记录明确提醒旧本地 Paddle 工作目录不能直接覆盖线上。
-- 这些是历史证据，尚未核对今天服务器文件哈希。一次 BatchMode + StrictHostKeyChecking 只读 SSH 尝试返回认证拒绝；没有读取生产 `.env`、数据库或私钥，也没有更改服务器。
+- 负责人于 2026-10-20 本人在 Vultr Console 执行只读核对。`/opt/csb/server.js`、`db.js`、`package.json`、`llm.js` 四个核心文件的 SHA256 与上述本机源码逐一相同，`systemctl is-active csb` 返回 `active`。
+- Paddle、public-guards、五个 order-lookup JS、widget JS/CSS、home/pricing/refunds/signup 共 13 个配套文件的 SHA256 输出再次汇总，结果为 `c2cc2987497898a29a84fea7ab096a2be2ed51c2fd176c3aad94fe6fd252df1e`，与本机计算完全一致。合计核对 17 个关键文件；这不代表整个服务器目录或运行配置已核对。
+- 一次 BatchMode + StrictHostKeyChecking 只读 SSH 尝试曾返回认证拒绝；随后由负责人通过 Console 提供哈希。没有读取生产 `.env`、数据库或私钥，没有更改服务器。
 
-## 历史记录中的运行位置（仍需现网确认）
+## 运行位置与核对边界
 
 | 项目 | 路径 / 名称 |
 | --- | --- |
@@ -34,7 +36,9 @@
 | `public/home.html`、signup/pricing/refunds/Paddle 页面 | GitHub 老基线缺失；上线时必须保留 |
 | `server.js`、`db.js`、`llm.js` | 真实会话、计数、部署监听与模型配置需逐处对照 |
 
-在确认现网版本后，把 Shopify 模块和必要改动移植到核对过的基线，再同时运行原有 smoke、billing、public、Paddle、order-lookup 回归与新增 Shopify 测试。当前 PR 的独立开发店验证不等同于该移植完成。
+已按上述已核对的源码准备整合：保留公共路由防护、带期限的会话、Stripe 幂等事务、Paddle、只读订单试点和静态页面，加入 Shopify 模块及跨计费渠道隔离。五套原有 smoke、billing、public、Paddle、order-lookup 回归均通过；新增 Shopify 与计费隔离测试共 25 项通过，30 个 JavaScript 文件语法检查通过。
+
+订单试点仍使用原来的受保护私有配置，Shopify app 不申请订单权限，也不启用该试点入口。Paddle/Stripe 的 checkout、回调和全局权益刷新不能改写 Shopify 商家的套餐或额度。生产现有环境、密钥、私有目录、数据库和服务管理文件不属于本次源码同步范围；发布前仍需确认这些运行配置和备份。
 
 ## 负责人在已登录服务器终端可运行的只读核对
 

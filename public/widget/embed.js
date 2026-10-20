@@ -1,5 +1,5 @@
 /*!
- * Customer Service Bot – embed loader.
+ * GetShopReply – embed loader.
  * Merchants paste exactly one <script> tag into their site:
  *   <script src="https://YOUR-HOST/embed.js" data-api-key="csb_xxx" defer></script>
  *
@@ -85,6 +85,131 @@
   var emailRow = document.getElementById('csb-email-row');
   var emailInput = document.getElementById('csb-email');
   var emailSendBtn = document.getElementById('csb-email-send');
+  var orderLookupEnabled = false;
+  var orderView = document.createElement('div');
+  orderView.id = 'csb-order-view';
+  orderView.hidden = true;
+  orderView.innerHTML = [
+    '<button type="button" id="csb-order-back">Back to chat</button>',
+    '<h3>Find your order</h3>',
+    '<p>Use the exact order number and checkout email. We will email a code to verify access.</p>',
+    '<form id="csb-order-details">',
+    '<label for="csb-order-number">Order number</label><input id="csb-order-number" placeholder="#1001" maxlength="41" autocomplete="off" required>',
+    '<label for="csb-order-email">Checkout email</label><input id="csb-order-email" type="email" maxlength="254" autocomplete="off" required>',
+    '<button type="submit">Email me a code</button></form>',
+    '<p id="csb-order-message" role="status" aria-live="polite"></p>',
+    '<form id="csb-order-verify" hidden>',
+    '<label for="csb-order-code">Six-digit code</label><input id="csb-order-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>',
+    '<button type="submit">View order status</button>',
+    '<button type="button" id="csb-order-restart">Request another code</button></form>',
+    '<div id="csb-order-result" hidden></div>',
+    '<p class="csb-order-note">Only use this form for order lookup. Details entered here are not sent to the AI chat. Older orders or orders without an email may require help from the store.</p>',
+    '<a id="csb-order-privacy" target="_blank" rel="noopener noreferrer">Privacy policy</a>'
+  ].join('');
+  panel.insertBefore(orderView, messagesEl);
+  var orderButton = document.createElement('button');
+  orderButton.type = 'button'; orderButton.id = 'csb-order-open'; orderButton.textContent = 'Where is my order?'; orderButton.hidden = true;
+  panel.insertBefore(orderButton, orderView);
+  document.getElementById('csb-order-privacy').href = apiBase + '/privacy';
+  var orderDetails = document.getElementById('csb-order-details');
+  var orderVerify = document.getElementById('csb-order-verify');
+  var orderMessage = document.getElementById('csb-order-message');
+  var orderResult = document.getElementById('csb-order-result');
+  var orderRestart = document.getElementById('csb-order-restart');
+  var orderSession = '', orderChallenge = '', orderGeneration = 0, orderTimer, resultTimer;
+  function orderRequest(endpoint, data) {
+    return fetch(apiBase + '/api/order-lookup/' + endpoint, {
+      method: 'POST', credentials: 'omit', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey }, body: JSON.stringify(data)
+    }).then(function (response) {
+      return response.json().then(function (body) {
+        if (!response.ok) throw new Error(body.error || 'Order lookup is unavailable. Please contact the store.');
+        return body;
+      });
+    });
+  }
+  if (!self.hasAttribute('data-shopify-app')) orderRequest('capabilities', {}).then(function (value) {
+    orderLookupEnabled = value.enabled === true;
+    orderButton.hidden = !orderLookupEnabled;
+  }).catch(function () { /* Disabled stores keep the existing chat experience. */ });
+  function clearOrder() {
+    ++orderGeneration;
+    if (orderChallenge && orderSession) orderRequest('cancel', { challenge: orderChallenge, session: orderSession }).catch(function () {});
+    orderChallenge = ''; orderSession = '';
+    clearTimeout(orderTimer); clearTimeout(resultTimer);
+    orderDetails.reset(); orderVerify.reset();
+    orderDetails.hidden = false; orderVerify.hidden = true; orderResult.hidden = true;
+    orderResult.replaceChildren(); orderMessage.textContent = '';
+    orderView.querySelectorAll('button').forEach(function (button) { button.disabled = false; });
+  }
+  function leaveOrders() {
+    clearOrder(); orderView.hidden = true; messagesEl.hidden = false; form.hidden = false;
+    orderButton.hidden = !orderLookupEnabled; input.focus();
+  }
+  function showOrders() {
+    clearOrder();
+    try { orderSession = cryptoRandom(32); } catch (_) { return; }
+    orderView.hidden = false; messagesEl.hidden = true; form.hidden = true; emailRow.hidden = true; orderButton.hidden = true;
+    document.getElementById('csb-order-number').focus();
+  }
+  function setOrderBusy(formEl, busy) {
+    formEl.querySelector('button[type="submit"]').disabled = busy;
+  }
+  orderButton.addEventListener('click', showOrders);
+  document.getElementById('csb-order-back').addEventListener('click', leaveOrders);
+  orderDetails.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var generation = orderGeneration;
+    setOrderBusy(orderDetails, true); orderMessage.textContent = 'Requesting a code…';
+    orderRequest('start', { order: document.getElementById('csb-order-number').value.trim(),
+      email: document.getElementById('csb-order-email').value.trim(), session: orderSession }).then(function (value) {
+      if (generation !== orderGeneration) return;
+      orderChallenge = value.challenge; orderDetails.hidden = true; orderVerify.hidden = false;
+      orderMessage.textContent = value.message + ' Codes expire in 5 minutes.';
+      document.getElementById('csb-order-code').focus();
+      orderRestart.disabled = true;
+      orderTimer = setTimeout(function () { orderRestart.disabled = false; }, value.resend_after * 1000);
+    }).catch(function (error) {
+      if (generation === orderGeneration) orderMessage.textContent = error.message;
+    }).finally(function () { if (generation === orderGeneration) setOrderBusy(orderDetails, false); });
+  });
+  orderRestart.addEventListener('click', showOrders);
+  function resultLine(parent, tag, text) {
+    var node = document.createElement(tag); node.textContent = text; parent.appendChild(node); return node;
+  }
+  orderVerify.addEventListener('submit', function (event) {
+    event.preventDefault();
+    var generation = orderGeneration;
+    setOrderBusy(orderVerify, true);
+    orderMessage.textContent = 'Verifying…';
+    orderRequest('verify', { challenge: orderChallenge, session: orderSession,
+      code: document.getElementById('csb-order-code').value.trim() }).then(function (value) {
+      if (generation !== orderGeneration) return;
+      orderChallenge = ''; orderVerify.reset(); orderVerify.hidden = true;
+      orderDetails.reset(); orderMessage.textContent = '';
+      orderResult.replaceChildren(); orderResult.hidden = false;
+      resultLine(orderResult, 'h4', value.result.status);
+      value.result.shipments.forEach(function (shipment, index) {
+        var section = document.createElement('section'); orderResult.appendChild(section);
+        resultLine(section, 'strong', 'Fulfillment ' + (index + 1) + ': ' + shipment.status);
+        shipment.tracking.forEach(function (tracking) {
+          resultLine(section, 'p', (tracking.carrier || 'Carrier not provided') + (tracking.number ? ' · ' + tracking.number : ' · Tracking number not provided'));
+          if (tracking.url && /^https:\/\//.test(tracking.url)) {
+            var link = resultLine(section, 'a', 'Track shipment'); link.href = tracking.url;
+            link.target = '_blank'; link.rel = 'noopener noreferrer'; link.referrerPolicy = 'no-referrer';
+          }
+        });
+        if (!shipment.tracking.length) resultLine(section, 'p', 'Tracking has not been provided.');
+      });
+      if (!value.result.shipments.length) resultLine(orderResult, 'p', 'No shipment details are available yet.');
+      resultLine(orderResult, 'p', value.result.note);
+      resultLine(orderResult, 'small', 'Source: ' + value.result.source);
+      resultTimer = setTimeout(function () { showOrders(); orderMessage.textContent = 'For your privacy, the result has been cleared. Verify again to view it.'; }, value.expires_in * 1000);
+    }).catch(function (error) {
+      if (generation === orderGeneration) orderMessage.textContent = error.message;
+    }).finally(function () { if (generation === orderGeneration) setOrderBusy(orderVerify, false); });
+  });
+  window.addEventListener('pagehide', clearOrder);
 
   function cryptoRandom(bytes) {
     var arr = new Uint8Array(bytes);
@@ -98,10 +223,11 @@
   function open() {
     panel.hidden = false;
     bubble.setAttribute('aria-expanded', 'true');
-    if (!messagesEl.childElementCount) addBot("Hi! I'm the support assistant for this store. Ask me anything about shipping, returns, or product info.");
+    if (!messagesEl.childElementCount) addBubble('bot', "Hi! I'm the support assistant for this store. Ask me anything about shipping, returns, or product info.");
     setTimeout(function () { input.focus(); }, 50);
   }
   function close() {
+    if (!orderView.hidden) leaveOrders();
     panel.hidden = true;
     bubble.setAttribute('aria-expanded', 'false');
   }
@@ -146,6 +272,10 @@
   }
 
   function send(message) {
+    if (orderLookupEnabled && /where.*order|track.*order|order.*status|订单|物流|查单/i.test(message)) {
+      showOrders(); return;
+    }
+    pendingQuestion = message;
     addBubble('user', message);
     sendBtn.disabled = true;
     input.disabled = true;

@@ -29,9 +29,9 @@ A future `app` subdomain also needs a Caddy virtual host/TLS certificate and con
 
 ## Important baseline mismatch
 
-Historical local deployment records and a later local Git project have now been found. They identify `/opt/csb`, `csb.service`, `/opt/csb/data/app.db`, `/opt/csb/.env` and a separate Paddle environment; these paths still need current-server verification. See `BASELINE-RECONCILIATION.md` for the candidate source and safe hash-check commands. Existing SSH authentication was unavailable, so no current server source was read.
+The owner ran read-only Vultr Console checks on 2026-10-20. Four core files under `/opt/csb` and a combined hash of 13 supporting files match the later local source at historical commit `4536ef4`. `csb.service` is active. The branch now integrates Shopify into that source, including Paddle, public guards, standalone static pages and the separately configured order-lookup pilot. See `BASELINE-RECONCILIATION.md` for exact scope. Runtime environment, private configuration and backup state remain to be checked; no production secrets were read.
 
-The live privacy notice describes DeepSeek, Vultr, Paddle and a Resend-assisted order-lookup pilot. This repository baseline has Stripe scaffolding and no pilot implementation. The owner confirmed Vultr/DeepSeek, but no server source or runtime configuration has been accessed. Public policy statements alone do not prove a feature is currently active. Before merging/deploying, compare the running application with GitHub, import legitimate missing code into an audited branch, and preserve the live billing, order lookup and static pages. Do not overwrite the running server with this older baseline.
+The original GitHub main was an older Stripe-era baseline. Its missing production functionality has now been restored in the independent development branch and tested together with Shopify. Do not deploy the old main or an earlier Shopify source archive. Preserve `/opt/csb/private`, the existing database, service environment files and Caddy configuration when deploying the approved final revision.
 
 ## Environment variables
 
@@ -40,7 +40,8 @@ The live privacy notice describes DeepSeek, Vultr, Paddle and a Resend-assisted 
 | `NODE_ENV` | `production` |
 | `PORT` | Existing internal service port, to be discovered on the server |
 | `PUBLIC_BASE_URL` | `https://getshopreply.com` (origin only) |
-| `HOST` | Optional alias; omit when `PUBLIC_BASE_URL` is set |
+| `BIND_HOST` | Local listening interface; preserve the current loopback binding unless proxy architecture requires otherwise |
+| `HOST` | Legacy non-URL interface binding is retained; a CLI HTTPS URL is never used as a local bind address |
 | `SHOPIFY_API_KEY` | Linked app's public client ID from TOML |
 | `SHOPIFY_API_SECRET` | Actual app client secret in the server's protected environment |
 | `SHOPIFY_TOKEN_ENCRYPTION_KEY` | Stable, unique 32 random bytes as 64 hex characters; back up securely |
@@ -57,7 +58,7 @@ The live privacy notice describes DeepSeek, Vultr, Paddle and a Resend-assisted 
 ## Steps to execute only after merge/deployment approval
 
 1. Identify the running service, source directory, git commit, Node version, environment file, internal port, database path and Caddy routing. Export only sanitized configuration facts. Obtain a consistent SQLite backup, including WAL state, using SQLite's backup mechanism or a stopped-service copy. Record a tested restore procedure.
-2. Resolve the server/GitHub mismatch above. Review the merged code and migrations against a backup copy of the real schema. The current branch assumes the `merchants`, `faqs`, `conversations` and `escalations` tables from this repository; the running app may differ.
+2. Review the reconciled revision and additive migrations against a backup copy of the actual schema. File hashes establish source correspondence for the checked files, not the current database schema or enabled runtime features. Preserve the existing Paddle/order-lookup private configuration and all standalone subscribers.
 3. Run `npm ci`, `npm run check`, `npm test` and `npm run shopify -- app build --config shopify.app.toml` in staging. Do not introduce multi-worker clustering: token refresh serialization currently assumes one Node process and one durable SQLite database.
 4. Add Shopify environment variables to the real service manager without printing values. Keep existing AI, legacy billing and session configuration. The production encryption key must be stable across restarts and deployments.
 5. Preserve existing Caddy routes. Ensure `/shopify` and `/shopify/*` reach the Node app; preserve raw JSON bodies and Shopify headers for webhooks. Ensure `/static/shopify.js`, `/embed.js`, `/static/widget.css`, `/api/chat` and `/api/chat/handoff` reach the same service. In a staging copy, reconcile static `/privacy` and `/terms` routing with the new pages before switching them.

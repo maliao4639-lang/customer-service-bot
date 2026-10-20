@@ -9,6 +9,7 @@
     script.src = base + '/embed.js';
     script.async = true;
     script.setAttribute('data-shopreply-loader', 'true');
+    script.setAttribute('data-shopify-app', 'true');
     script.setAttribute('data-api-key', config.getAttribute('data-api-key'));
     script.setAttribute('data-api-base', base);
     document.head.appendChild(script);

@@ -62,12 +62,14 @@ async function generateAnswer({ merchant, faqs, history, visitorMessage }) {
   try {
     res = await fetch(`${LLM_BASE_URL}/chat/completions`, {
       method: 'POST',
+      signal: AbortSignal.timeout(30000),
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${LLM_API_KEY}`,
       },
       body: JSON.stringify({
         model: LLM_MODEL,
+        ...(['enabled','disabled'].includes(process.env.LLM_THINKING) ? {thinking:{type:process.env.LLM_THINKING}} : {}),
         messages,
         temperature: 0.2,
         max_tokens: 400,
@@ -84,6 +86,8 @@ async function generateAnswer({ merchant, faqs, history, visitorMessage }) {
 
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content?.trim() || '';
+
+  if (!content) return {ok:false,error:'LLM returned an empty answer'};
 
   if (content.toUpperCase() === 'ESCALATE') {
     return { ok: false, escalate: true };
