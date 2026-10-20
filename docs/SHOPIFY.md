@@ -15,7 +15,7 @@ The owner completed CLI browser authentication. CLI 4.9.4 linked the existing Ge
 - The app writes a public widget key and base URL to `AppInstallation` metafield `shopreply.widget`. Liquid reads it using `app.metafields.shopreply.widget.value`. Admin API credentials never enter Liquid or the browser.
 - Theme extension `shopreply-embed` adds the existing widget after the page becomes idle. No ScriptTag API or theme source editing.
 - Shopify Billing API: Free (no charge), Pro USD 21 / `EVERY_30_DAYS`, Pro USD 205 / `ANNUAL`. Server-controlled amount, currency and interval. Paid access is synchronized from active Shopify subscriptions, including on app load and subscription webhooks. A pending checkout or return URL grants no access.
-- `/shopify/webhooks`: raw-byte HMAC verification, durable delivery-ID deduplication and atomic local writes. Subscription notifications cause an API reconciliation, so an older notification cannot overwrite newer status. Failures return non-200 so Shopify can retry.
+- `/shopify/webhooks`: raw-byte HMAC verification, durable delivery-ID deduplication and atomic local writes. The toml uri is `/webhooks` because Shopify CLI appends it to `application_url` (`https://getshopreply.com/shopify`). The same handler also accepts `/webhooks` and `/shopify/shopify/webhooks`. Each delivery logs one line, `[shopify-webhook] outcome=... topic=... shop=...`, with no payload. Subscription notifications cause an API reconciliation, so an older notification cannot overwrite newer status. Failures return non-200 so Shopify can retry.
 - Dedicated accounts per Shopify shop prevent email-based account takeover and accidental conversion of an existing Stripe subscription.
 
 ## Run and validate locally

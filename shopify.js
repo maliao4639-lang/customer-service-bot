@@ -322,6 +322,34 @@ router.delete('/api/privacy/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+function shopNumericId(value) {
+  if (value == null || value === '') return null;
+  const text = String(value).trim();
+  const gid = /^gid:\/\/shopify\/Shop\/(\d+)$/.exec(text);
+  if (gid) return gid[1];
+  if (/^\d+$/.test(text)) return text;
+  return null;
+}
+// Official app/uninstalled samples send a numeric shop id and myshopify_domain: null.
+// Compliance payloads send shop_id as a number or a Shop GID. Compare the numeric id.
+function webhookShopProblem(row, headerShop, topic, body) {
+  const bodyShop = body?.shop_domain || body?.myshopify_domain;
+  if (typeof bodyShop === 'string' && bodyShop !== headerShop) return 'shop_domain_mismatch';
+  if (!row?.shop_gid) return null;
+  let declared = body?.shop_id;
+  if ((declared == null || declared === '') && topic === 'app/uninstalled') declared = body?.id;
+  if ((declared == null || declared === '') && body?.app_subscription?.admin_graphql_api_shop_id) {
+    declared = body.app_subscription.admin_graphql_api_shop_id;
+  }
+  if (declared == null || declared === '') return null;
+  const expected = shopNumericId(row.shop_gid);
+  const actual = shopNumericId(declared);
+  if (!expected || !actual || expected !== actual) return 'shop_id_mismatch';
+  return null;
+}
+function webhookLog(outcome, topic, shop) {
+  console.log(`[shopify-webhook] outcome=${outcome} topic=${topic || '-'} shop=${shop || '-'}`);
+}
 function isShopifyMerchant(id) { return !!db.prepare('SELECT 1 FROM shopify_shops WHERE merchant_id=?').get(id); }
 function privacyEpoch(id) { return db.prepare('SELECT privacy_epoch FROM shopify_shops WHERE merchant_id=?').get(id)?.privacy_epoch ?? null; }
 function rememberVisitor(merchantId, sessionKey, email) {
@@ -345,34 +373,42 @@ function privacyExport(row, email) {
     note: 'Anonymous chats cannot be matched without a captured email. Verify the requester before delivering this export.',
   };
 }
-router.post('/webhooks', safe(async (req, res) => {
-  const c = config();
-  const expected = crypto.createHmac('sha256', c.secret).update(req.rawBody || Buffer.alloc(0)).digest();
-  if (!req.rawBody || !equal(expected, Buffer.from(String(req.headers['x-shopify-hmac-sha256'] || ''), 'base64'))) return res.sendStatus(401);
+async function handleWebhook(req, res) {
   const shop = req.headers['x-shopify-shop-domain'];
-  const id = req.headers['x-shopify-webhook-id'];
   const topic = req.headers['x-shopify-topic'];
+  let c;
+  try { c = config(); }
+  catch (e) { webhookLog('not_configured', topic, shop); throw e; }
+  const expected = crypto.createHmac('sha256', c.secret).update(req.rawBody || Buffer.alloc(0)).digest();
+  if (!req.rawBody || !equal(expected, Buffer.from(String(req.headers['x-shopify-hmac-sha256'] || ''), 'base64'))) {
+    webhookLog('bad_hmac', topic, shop);
+    return res.sendStatus(401);
+  }
+  const id = req.headers['x-shopify-webhook-id'];
   const topics = ['app/uninstalled', 'app_subscriptions/update', 'customers/data_request', 'customers/redact', 'shop/redact'];
-  if (!validShop(shop) || typeof id !== 'string' || id.length > 200 || !topics.includes(topic)) return res.sendStatus(400);
+  if (!validShop(shop) || typeof id !== 'string' || id.length > 200 || !topics.includes(topic)) {
+    webhookLog('rejected', topic, shop);
+    return res.sendStatus(400);
+  }
   await locked(shop, async () => {
-    if (db.prepare('SELECT 1 FROM shopify_webhooks WHERE id=?').get(id)) return;
+    if (db.prepare('SELECT 1 FROM shopify_webhooks WHERE id=?').get(id)) { webhookLog('duplicate', topic, shop); return; }
     const row = shopRow(shop);
     // HMAC signs the body, not HTTP headers. Bind any body shop identity as well.
-    const bodyShop = req.body?.shop_domain || req.body?.myshopify_domain;
-    const bodyId = req.body?.shop_id || (topic === 'app/uninstalled' ? req.body?.id : null);
-    const bodyGid = req.body?.app_subscription?.admin_graphql_api_shop_id;
-    if ((bodyShop && bodyShop !== shop) || (row && bodyId && row.shop_gid !== `gid://shopify/Shop/${bodyId}`) ||
-        (row && bodyGid && row.shop_gid !== bodyGid)) throw Object.assign(new Error('Webhook shop mismatch'), { status: 400 });
-    if (row?.merchant_id && !row.uninstalled_at && topic === 'app_subscriptions/update') await syncBilling(shop);
+    const problem = webhookShopProblem(row, shop, topic, req.body || {});
+    if (problem) { webhookLog(problem, topic, shop); throw Object.assign(new Error('Webhook shop mismatch'), { status: 400 }); }
+    let outcome = 'ok';
+    try {
+      if (row?.merchant_id && !row.uninstalled_at && topic === 'app_subscriptions/update') await syncBilling(shop);
+    } catch (e) { webhookLog('billing_sync_failed', topic, shop); throw e; }
     transaction(() => {
       if (row && topic === 'app/uninstalled') {
         const triggered = Date.parse(req.headers['x-shopify-triggered-at']);
-        if (!Number.isFinite(triggered)) throw Object.assign(new Error('Missing webhook timestamp'), { status: 400 });
+        if (!Number.isFinite(triggered)) { webhookLog('missing_timestamp', topic, shop); throw Object.assign(new Error('Missing webhook timestamp'), { status: 400 }); }
         if (triggered >= row.installed_at) {
           db.prepare('DELETE FROM merchants WHERE id=?').run(row.merchant_id);
           db.prepare('DELETE FROM shopify_privacy_requests WHERE shop=?').run(shop);
           db.prepare(`UPDATE shopify_shops SET credentials=NULL, subscription_id=NULL, uninstalled_at=?, embed_published=0 WHERE shop=?`).run(triggered, shop);
-        }
+        } else outcome = 'stale_uninstall_ignored';
       }
       if (topic === 'shop/redact' && (!row || row.uninstalled_at)) {
         db.prepare('DELETE FROM shopify_privacy_requests WHERE shop=?').run(shop);
@@ -401,9 +437,13 @@ router.post('/webhooks', safe(async (req, res) => {
       }
       db.prepare('INSERT INTO shopify_webhooks VALUES (?, ?)').run(id, Date.now());
     });
+    webhookLog(outcome, topic, shop);
   });
   res.sendStatus(200);
-}));
+}
+// Mounted at /shopify, so these are /shopify/webhooks and /shopify/shopify/webhooks.
+router.post('/webhooks', safe(handleWebhook));
+router.post('/shopify/webhooks', safe(handleWebhook));
 function purgeExpired() {
   const cutoff = Date.now() - 90 * 86400000;
   transaction(() => {

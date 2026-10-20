@@ -39,6 +39,14 @@
 
 公开 DNS 为 `139.180.143.31`，首页响应经过 Caddy。负责人确认 Vultr 和 DeepSeek。GitHub main 缺失的 Paddle、Resend 订单试点、公共路由防护及静态页面已从较新本机基线恢复；负责人通过 Console 核对 17 个关键源码文件与该基线一致，`csb` 服务 active。运行环境、生产模型、数据库和私有配置状态仍需在部署前确认。整合后的 Paddle/Stripe 路径不能改写 Shopify 套餐或额度，单独订单试点也不能为 Shopify app 账号提供订单访问。
 
+## 2026-10-20 后续代码修复
+
+线上 `GET /shopify` 已转到 Node，当前响应是 Express `Cannot GET /shopify`，说明这版代码尚未部署，不是 Caddy 缺少路径。隐私页仍是 10 月 1 日的旧文，邮箱仍是 Gmail。
+
+Shopify CLI 会把 toml 里的相对 `uri` 接到 `application_url` 后面。原先 `uri = "/shopify/webhooks"` 会变成 `https://getshopreply.com/shopify/shopify/webhooks`，应用实际路由是 `/shopify/webhooks`。现改为 `uri = "/webhooks"`。同一处理函数同时接受 `/shopify/webhooks`、`/webhooks` 和 `/shopify/shopify/webhooks`。每条通知打一行不含正文的 `[shopify-webhook]` 日志。店铺身份同时接受数字 id 和 `gid://shopify/Shop/<数字>`；官方卸载示例里的 `myshopify_domain: null` 不再被当成域名不匹配。
+
+真实卸载通知仍要负责人在 `shopify app dev` 保持运行时再看终端里的 `outcome=ok`。这次没有登录 Shopify，没有发布版本，没有改 Vultr。
+
 ## 下一步
 
 负责人本人完成 App Home 登录、主题启用和测试订阅批准；整合后前台真实 AI 与转人工已再次通过。真实卸载测试发现通知投递问题，当前优先恢复开发预览、验证重新安装并定位通知来源/配置。随后处理 GDPR、正式性能对照和审核素材。后续可通过 `npm run shopify -- app dev --config shopify.app.toml --store getshopreply-test-4k85f5hy.myshopify.com` 恢复；重启导致隧道更换时需负责人刷新开发预览 App Home。正常应用入口在正式版本发布前可能仍指向旧占位页，不能将其当作已上线。完成剩余验收和负责人批准后，才决定活动版本发布、PR 合并和 Vultr 上线。

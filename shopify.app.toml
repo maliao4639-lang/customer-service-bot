@@ -18,10 +18,12 @@ redirect_urls = ["https://getshopreply.com/shopify"]
 [webhooks]
 api_version = "2026-10"
 
+# uri is appended to application_url. application_url already ends in /shopify,
+# so this relative path is https://getshopreply.com/shopify/webhooks.
 [[webhooks.subscriptions]]
 topics = ["app/uninstalled", "app_subscriptions/update"]
-uri = "/shopify/webhooks"
+uri = "/webhooks"
 
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-uri = "/shopify/webhooks"
+uri = "/webhooks"

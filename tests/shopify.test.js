@@ -20,6 +20,7 @@ const app = require('../server');
 const { db, ensureMonthReset, tryConsumeConvo } = require('../db');
 const shopify = require('../shopify');
 const nativeFetch = global.fetch;
+const shopIds = { 'alpha-test.myshopify.com': '1001', 'beta-test.myshopify.com': '1002' };
 const stores = new Map();
 let calls = [];
 let failBilling = false;
@@ -46,7 +47,7 @@ global.fetch = async function (url, opts) {
     return Response.json({ access_token: 'fake-admin-access', refresh_token: 'fake-refresh', expires_in: 3600 });
   }
   const { query, variables } = JSON.parse(opts.body);
-  if (query.includes('query Connect')) return Response.json({ data: { shop: { id: `gid://shopify/Shop/${u.hostname}`, name: 'Test store' }, currentAppInstallation: { id: s.installationId || 'gid://shopify/AppInstallation/1' } } });
+  if (query.includes('query Connect')) return Response.json({ data: { shop: { id: `gid://shopify/Shop/${shopIds[u.hostname] || '1000'}`, name: 'Test store' }, currentAppInstallation: { id: s.installationId || 'gid://shopify/AppInstallation/1' } } });
   if (query.includes('mutation PublishWidget')) { s.metafields = variables.metafields; return Response.json({ data: { metafieldsSet: { userErrors: [] } } }); }
   if (query.includes('query Subscriptions')) {
     if (failBilling) return Response.json({ errors: [{ message: 'Temporary upstream failure' }] });
@@ -80,9 +81,9 @@ test('Shopify integration: isolated database and mocked external services', asyn
     return { status: r.status, data, headers: r.headers };
   }
   const api = (shop, route, method = 'GET', body) => request('/shopify/api/' + route, { token: jwt(shop), method, body });
-  async function webhook(shop, topic, payload = {}, id = crypto.randomUUID(), extraHeaders = {}) {
+  async function webhook(shop, topic, payload = {}, id = crypto.randomUUID(), extraHeaders = {}, route = '/shopify/webhooks') {
     const raw = JSON.stringify(payload);
-    return request('/shopify/webhooks', { method: 'POST', body: payload, headers: {
+    return request(route, { method: 'POST', body: payload, headers: {
       'x-shopify-shop-domain': shop, 'x-shopify-topic': topic, 'x-shopify-webhook-id': id,
       'x-shopify-triggered-at': new Date(Date.now() + 5).toISOString(),
       'x-shopify-hmac-sha256': crypto.createHmac('sha256', process.env.SHOPIFY_API_SECRET).update(raw).digest('base64'), ...extraHeaders,
@@ -174,6 +175,7 @@ test('Shopify integration: isolated database and mocked external services', asyn
     await t.test('invalid webhook signatures and upstream failures do not change entitlements', async () => {
       assert.equal((await webhook(A, 'app/uninstalled', {}, crypto.randomUUID(), { 'x-shopify-hmac-sha256': 'bad' })).status, 401);
       assert.equal((await webhook(A, 'customers/redact', { shop_domain: B, customer: { email: 'visitor@example.test' } })).status, 400);
+      assert.equal((await webhook(A, 'customers/data_request', { shop_id: 1002, shop_domain: A, customer: { email: 'nope@example.test' } })).status, 400);
       assert.equal(merchant(A).tier, 'pro_annual');
       failBilling = true;
       const event = crypto.randomUUID();
@@ -189,7 +191,7 @@ test('Shopify integration: isolated database and mocked external services', asyn
     });
     await t.test('privacy export is durable, encrypted, deduplicated and inaccessible to another shop', async () => {
       const id = crypto.randomUUID();
-      assert.equal((await webhook(A, 'customers/data_request', { customer: { email: 'visitor@example.test' } }, id)).status, 200);
+      assert.equal((await webhook(A, 'customers/data_request', { shop_id: 'gid://shopify/Shop/1001', shop_domain: A, customer: { email: 'visitor@example.test' } }, id)).status, 200);
       await webhook(A, 'customers/data_request', { customer: { email: 'visitor@example.test' } }, id);
       assert.ok(!db.prepare('SELECT payload FROM shopify_privacy_requests WHERE id=?').get(id).payload.includes('visitor@example.test'));
       assert.equal((await api(A, 'privacy/' + id)).data.escalations.length, 1);
@@ -279,10 +281,10 @@ test('Shopify integration: isolated database and mocked external services', asyn
       const pendingReply = request('/api/chat', { method: 'POST', headers: { 'X-API-Key': key }, body: { message: 'Shipping?', session_key: 'uninstall-in-flight' } });
       await started;
       const id = crypto.randomUUID();
-      assert.equal((await webhook(A, 'app/uninstalled', {}, id)).status, 200);
+      assert.equal((await webhook(A, 'app/uninstalled', { id: 1001, myshopify_domain: null }, id, {}, '/webhooks')).status, 200);
       pauseLlm = null; releaseLlm();
       assert.equal((await pendingReply).status, 401);
-      assert.equal((await webhook(A, 'app/uninstalled', {}, id)).status, 200);
+      assert.equal((await webhook(A, 'app/uninstalled', { id: 1001, myshopify_domain: null }, id, {}, '/shopify/shopify/webhooks')).status, 200);
       assert.equal(db.prepare('SELECT 1 FROM merchants WHERE id=?').get(merchantId), undefined);
       assert.equal(row(A).credentials, null);
       assert.equal((await api(A, 'state')).status, 401);
@@ -294,10 +296,10 @@ test('Shopify integration: isolated database and mocked external services', asyn
       db.prepare('UPDATE shopify_shops SET uninstalled_at=? WHERE shop=?').run(Date.now() - 120000, A);
       assert.equal((await api(A, 'connect', 'POST', {})).status, 200);
       const id = row(A).merchant_id;
-      assert.equal((await webhook(A, 'app/uninstalled', {}, crypto.randomUUID(), { 'x-shopify-triggered-at': '2020-01-01T00:00:00Z' })).status, 200);
+      assert.equal((await webhook(A, 'app/uninstalled', { id: 1001, myshopify_domain: null }, crypto.randomUUID(), { 'x-shopify-triggered-at': '2020-01-01T00:00:00Z' })).status, 200);
       assert.equal(row(A).merchant_id, id);
       assert.equal((await webhook(A, 'shop/redact')).status, 200); assert.equal(row(A).merchant_id, id);
-      await webhook(A, 'app/uninstalled');
+      await webhook(A, 'app/uninstalled', { id: 'gid://shopify/Shop/1001', myshopify_domain: null });
       assert.equal((await webhook(A, 'shop/redact')).status, 200); assert.equal(row(A), undefined);
     });
   } finally {

@@ -8,13 +8,13 @@ Use the existing backend and domain, as selected by the owner:
 | --- | --- |
 | App URL | `https://getshopreply.com/shopify` |
 | Redirect URL | `https://getshopreply.com/shopify` |
-| Webhooks | `https://getshopreply.com/shopify/webhooks` |
+| Webhooks | `https://getshopreply.com/shopify/webhooks` (toml uri is `/webhooks`; CLI appends it to the app URL) |
 | Privacy / terms | `https://getshopreply.com/privacy`, `https://getshopreply.com/terms` |
 | Support | `support@getshopreply.com` |
 | Host / AI | Vultr / DeepSeek, confirmed by owner |
 | Database in this branch | Node's embedded SQLite on a persistent local volume |
 
-Read-only DNS/HTTP checks on 2026-10-20 observed A `139.180.143.31` and an HTTP `Via: 1.1 Caddy` response. These checks do not establish the server's internal process, paths, ports, model configuration or backup policy.
+Read-only DNS/HTTP checks on 2026-10-20 observed A `139.180.143.31` and an HTTP `Via: 1.1 Caddy` response. `GET /shopify` is already forwarded to Node and currently returns Express `Cannot GET /shopify`, because this branch is not deployed. `GET /privacy` is the older page and still shows `maliao4639@gmail.com`. These checks do not establish the server's internal port, the live `LLM_MODEL`, or the backup policy. The published privacy page names Vultr as the host and DeepSeek as the AI provider. The code calls `POST {LLM_BASE_URL}/chat/completions`; if those variables are unset it falls back to `https://api.openai.com/v1` and `gpt-4o-mini`. Do not deploy that fallback over the server's existing DeepSeek settings.
 
 ## DNS
 

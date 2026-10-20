@@ -143,6 +143,9 @@ app.get('/billing/paddle', requireAuth, (req, res) => {
 
 
 // Shopify APIs authenticate with App Bridge ID tokens, independently of cookies.
+// CLI appends the toml uri (/webhooks) to application_url (.../shopify), which
+// is this mount. A dev tunnel whose origin has no /shopify path posts to /webhooks.
+app.post('/webhooks', (req, res, next) => { req.url = '/webhooks'; shopify.router(req, res, next); });
 app.use('/shopify', shopify.router);
 app.use('/api/chat', shopify.storefrontCors);
 
@@ -931,6 +934,12 @@ if (require.main === module) {
   // CLI HOST can be a public HTTPS URL; it is not a local listening interface.
   const bindHost = process.env.BIND_HOST || (process.env.HOST && !process.env.HOST.includes('://') ? process.env.HOST : '127.0.0.1');
   app.listen(PORT, bindHost, () => {
+    const llmBase = process.env.LLM_BASE_URL || 'https://api.openai.com/v1';
+    const llmModel = process.env.LLM_MODEL || 'gpt-4o-mini';
+    const shopifyReady = Boolean(process.env.SHOPIFY_API_KEY && process.env.SHOPIFY_API_SECRET
+      && /^[a-f\d]{64}$/i.test(process.env.SHOPIFY_TOKEN_ENCRYPTION_KEY || '')
+      && /^https:\/\//.test(PUBLIC_BASE_URL));
+    console.log(`[boot] public_base=${PUBLIC_BASE_URL} llm_base=${llmBase} llm_model=${llmModel} shopify_configured=${shopifyReady}`);
     console.log(`AI customer-service bot listening on ${PUBLIC_BASE_URL}`);
   });
 }
